@@ -126,6 +126,46 @@ def test_held_lock_is_not_reaped(framework: Path) -> None:
         os.close(fd)
 
 
+def test_pipeline_loads_config_yaml(tmp_path: Path) -> None:
+    """Pipeline boot honors `.ticket-runtime/config.yaml` (RFC-0004)."""
+    from lib.ticket_management.runtime.pipeline import Pipeline
+
+    repo = repo_init(tmp_path / "fw")
+    runtime_dir = repo / "TicketsRepository" / ".ticket-runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    (runtime_dir / "config.yaml").write_text(
+        "recursion_max_depth: 3\n"
+        "debounce_window_seconds: 0.25\n"
+        "worker_concurrency: 2\n"
+    )
+
+    p = Pipeline(root=repo)
+    p.start()
+    try:
+        assert p.config.recursion_max_depth == 3
+        assert p.config.debounce_window_seconds == 0.25
+        assert p.config.worker_concurrency == 2
+        assert p.bus._recursion_max_depth == 3  # noqa: SLF001
+        assert p.scheduler._pool._max_workers == 2  # noqa: SLF001
+    finally:
+        p.stop()
+
+
+def test_pipeline_defaults_when_no_config(tmp_path: Path) -> None:
+    """Missing config.yaml yields canonical defaults (Invariant I-2)."""
+    from lib.ticket_management.runtime.pipeline import Pipeline
+
+    repo = repo_init(tmp_path / "fw")
+    p = Pipeline(root=repo)
+    p.start()
+    try:
+        assert p.config.recursion_max_depth == 10
+        assert p.config.worker_concurrency == 4
+        assert p.bus._recursion_max_depth == 10  # noqa: SLF001
+    finally:
+        p.stop()
+
+
 def test_pipeline_reaps_locks_at_boot(framework: Path) -> None:
     """Pipeline.start() reaps stale locks automatically."""
     from lib.ticket_management.runtime.pipeline import Pipeline

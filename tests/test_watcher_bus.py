@@ -155,3 +155,66 @@ def test_watcher_start_requires_watch():
         assert "watch()" in str(exc)
     else:
         raise AssertionError("expected RuntimeError before watch()")
+
+
+def test_watcher_survives_inotify_read_error(tmp_path: Path):
+    """A read error must be logged and retried, never kill the loop."""
+    import threading
+    import time as _time
+
+    from lib.ticket_management.config import RuntimeConfig
+
+    tickets = tmp_path / "TicketsRepository"
+    tickets.mkdir()
+    (tickets / "HQ_BR-001.ticket").mkdir()
+
+    bus = EventBus()
+    w = FsWatcher()
+    w.watch(str(tmp_path), bus, RuntimeConfig())
+    w.start(block=False)
+    _time.sleep(0.1)
+
+    thread_errors: list = []
+    threading.excepthook = lambda args: thread_errors.append(args)
+
+    # Force a read error by closing the inotify fd underneath the loop.
+    w._inotify.close()  # noqa: SLF001
+    _time.sleep(0.4)
+    w.stop()
+
+    assert thread_errors == [], f"watcher thread crashed: {thread_errors}"
+
+
+def test_watcher_watches_nested_ticket_dirs(tmp_path: Path):
+    """Events inside nested ticket/asset directories must fire (recursion)."""
+    import time as _time
+
+    from lib.ticket_management.config import RuntimeConfig
+
+    tickets = tmp_path / "TicketsRepository"
+    nested = tickets / "HQ_BR-001.ticket" / "task" / "assets"
+    nested.mkdir(parents=True)
+
+    bus = EventBus()
+    received: list[Event] = []
+    bus.subscribe(handler=received.append)
+
+    w = FsWatcher()
+    w.watch(str(tmp_path), bus, RuntimeConfig())
+    w.start(block=False)
+
+    (nested / "asset.txt").write_text("x")
+
+    try:
+        for _ in range(50):
+            if any(e.ticket_id == "HQ_BR-001" and e.name == "fs.changed" for e in received):
+                break
+            _time.sleep(0.05)
+    finally:
+        w.stop()
+
+    assert any(
+        e.ticket_id == "HQ_BR-001" and e.name == "fs.changed"
+        and str(e.data.get("path", "")).endswith("asset.txt")
+        for e in received
+    )

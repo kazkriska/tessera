@@ -48,7 +48,10 @@ class RuntimeServer:
 
     def __init__(self, root: str | Path, config: RuntimeConfig | None = None) -> None:
         self.root = Path(root).resolve()
-        self.config = config or RuntimeConfig()
+        # Keep config as-is (may be None): the Pipeline loads
+        # `.ticket-runtime/config.yaml` at boot when no config is supplied
+        # (RFC-0004 boot step 1), so daemon-started runtimes honor user config.
+        self.config = config
         self.pipeline: Pipeline | None = None
         self.sock_path: Path | None = None
         self._server: socket.socket | None = None
