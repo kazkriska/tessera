@@ -112,3 +112,46 @@ def test_watcher_debounce_coalesces_rapid_events():
     time.sleep(0.12)
 
     assert len(events) <= 1
+
+
+def test_watcher_inotify_loop_emits_domain_event(tmp_path: Path):
+    """Real inotify read loop publishes a domain event on file change."""
+    import threading
+    import time as _time
+
+    from lib.ticket_management.config import RuntimeConfig
+
+    tickets = tmp_path / "TicketsRepository"
+    tickets.mkdir()
+    (tickets / "HQ_BR-001.ticket").mkdir()
+
+    bus = EventBus()
+    received: list[Event] = []
+    bus.subscribe(handler=received.append)
+
+    w = FsWatcher()
+    w.watch(str(tmp_path), bus, RuntimeConfig())
+    w.start(block=False)
+
+    # Touch a watched file; the watcher should translate it to a domain event.
+    (tickets / "HQ_BR-001.ticket" / "metadata.json").write_text('{"id": "HQ_BR-001"}')
+
+    try:
+        for _ in range(50):  # up to ~2.5s
+            if any(e.ticket_id == "HQ_BR-001" and e.name == "metadata.updated" for e in received):
+                break
+            _time.sleep(0.05)
+    finally:
+        w.stop()
+
+    assert any(e.ticket_id == "HQ_BR-001" and e.name == "metadata.updated" for e in received)
+
+
+def test_watcher_start_requires_watch():
+    w = FsWatcher()
+    try:
+        w.start(block=False)
+    except RuntimeError as exc:
+        assert "watch()" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError before watch()")
