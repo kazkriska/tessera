@@ -69,34 +69,49 @@ class Pipeline:
 
     def start(self) -> None:
         """Assemble and start every stage in canonical order."""
-        self.config = self.config or RuntimeConfig()
         root = Path(self.root).resolve()
+
+        # RFC-0004 boot step 1: load `.ticket-runtime/config.yaml` when the
+        # caller did not hand us a config. A missing file yields defaults
+        # (Invariant I-2 — deleting `.ticket-runtime/` reverts to defaults).
+        if self.config is None:
+            from lib.ticket_management.config import load_config
+
+            cfg_path = (
+                root
+                / "TicketsRepository"
+                / ".ticket-runtime"
+                / "config.yaml"
+            )
+            self.config = load_config(str(cfg_path))
 
         self.repo = repo_init(root)
         self.registry = Registry(str(self.repo))
         rescan(self.repo, self.registry)
 
+        # Resolve config paths relative to the canonical runtime dir:
+        # `<repo>/TicketsRepository/.ticket-runtime/`. CONTRACTS §5 names the
+        # defaults (`locks`, `registry.db`) relative to that dir.
+        runtime_dir = self.repo / "TicketsRepository" / ".ticket-runtime"
+        lock_dir = Path(self.config.lock_dir)
+        if not lock_dir.is_absolute():
+            lock_dir = runtime_dir / lock_dir
+        lock_dir = lock_dir.resolve()
+
         # Reap stale ticket locks left by a crashed runtime (RFC-0006).
         from lib.ticket_management.runtime.scheduler import reap_stale_locks
 
-        lock_dir = self.repo / "TicketsRepository" / ".ticket-runtime" / "locks"
         reaped = reap_stale_locks(lock_dir)
         if reaped:
             logger.info("pipeline: reaped %d stale lock(s) at boot", reaped)
 
-        self.bus = EventBus()
+        self.bus = EventBus(recursion_max_depth=self.config.recursion_max_depth)
         self.watcher = FsWatcher()
         self.watcher.watch(str(self.repo), self.bus, self.config)
         # Start the inotify loop in a daemon thread (returns immediately).
         self.watcher.start(block=False)
 
         # Scheduler runner = the dispatcher glue (executor_dispatch).
-        lock_dir = (
-            self.repo
-            / "TicketsRepository"
-            / ".ticket-runtime"
-            / "locks"
-        )
         self.scheduler = Scheduler(
             config=self.config,
             registry=self.registry,

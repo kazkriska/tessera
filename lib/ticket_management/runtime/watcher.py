@@ -11,6 +11,7 @@ The mapping, ownership, and debounce helpers are unit-tested in
 
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +23,8 @@ from lib.ticket_management.config import RuntimeConfig
 from lib.ticket_management.runtime.bus import Event, EventBus
 
 __all__ = ["FsWatcher"]
+
+logger = logging.getLogger(__name__)
 
 _TRIGGER_MAP = {
     "metadata.json": "metadata.updated",
@@ -40,6 +43,15 @@ _WATCH_FLAGS = (
     | _IN.CLOSE_WRITE
     | _IN.MOVE_SELF
 )
+
+
+def _walk_dirs(root: Path) -> list[Path]:
+    """Return *root* plus every descendant directory (recursive).
+
+    inotify watches are non-recursive: each directory must be registered
+    explicitly so file events in nested ticket/asset directories fire.
+    """
+    return [p for p in root.rglob("*") if p.is_dir()] + [root]
 
 
 @dataclass
@@ -136,17 +148,14 @@ class FsWatcher:
             ) from exc
         self._inotify = INotify()
         self._wd_to_path.clear()
-        # Watch the TicketsRepository tree. inotify_simple does NOT recurse
-        # automatically on all kernels; we add a watch on the root and on
-        # each immediate *.ticket directory so nested file changes fire.
+        # Watch the whole TicketsRepository tree. inotify does NOT recurse, so
+        # we walk every directory (root, each *.ticket dir, and nested asset
+        # dirs) and register a watch on each — nested file changes must fire.
         tickets_root = Path(repo_path) / "TicketsRepository"
         if tickets_root.is_dir():
-            wd = self._inotify.add_watch(str(tickets_root), _WATCH_FLAGS)
-            self._wd_to_path[wd] = str(tickets_root)
-            for child in tickets_root.iterdir():
-                if child.is_dir() and child.name.endswith(".ticket"):
-                    wd = self._inotify.add_watch(str(child), _WATCH_FLAGS)
-                    self._wd_to_path[wd] = str(child)
+            for dir_path in _walk_dirs(tickets_root):
+                wd = self._inotify.add_watch(str(dir_path), _WATCH_FLAGS)
+                self._wd_to_path[wd] = str(dir_path)
 
     def _watch_root(self) -> None:
         """(Re)register the TicketsRepository tree if not already watched."""
@@ -156,13 +165,10 @@ class FsWatcher:
         if not tickets_root.is_dir():
             return
         known = set(self._wd_to_path.values())
-        if str(tickets_root) not in known:
-            wd = self._inotify.add_watch(str(tickets_root), _WATCH_FLAGS)
-            self._wd_to_path[wd] = str(tickets_root)
-        for child in tickets_root.iterdir():
-            if child.is_dir() and child.name.endswith(".ticket") and str(child) not in known:
-                wd = self._inotify.add_watch(str(child), _WATCH_FLAGS)
-                self._wd_to_path[wd] = str(child)
+        for dir_path in _walk_dirs(tickets_root):
+            if str(dir_path) not in known:
+                wd = self._inotify.add_watch(str(dir_path), _WATCH_FLAGS)
+                self._wd_to_path[wd] = str(dir_path)
 
     def start(self, block: bool = False) -> None:
         """Run the inotify read loop.

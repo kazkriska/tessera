@@ -82,10 +82,11 @@ def runtime_start(
     # wait() until `runtime stop` sends the shutdown RPC.
     daemon_code = (
         "import sys, signal\n"
-        "from lib.ticket_management.config import RuntimeConfig\n"
         "from lib.ticket_management.runtime.server import RuntimeServer\n"
         f"root = {str(root)!r}\n"
-        "srv = RuntimeServer(root, RuntimeConfig())\n"
+        # No config passed: the Pipeline loads `.ticket-runtime/config.yaml`
+        # itself at boot (RFC-0004 boot step 1), so user-set values apply.
+        "srv = RuntimeServer(root)\n"
         "def _term(*_):\n"
         "    srv.stop()\n"
         "signal.signal(signal.SIGTERM, _term)\n"
