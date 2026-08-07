@@ -6,3 +6,8 @@ and path jail.
 
 TODO(Phase D): implement invocation contract.
 """
+
+
+def bash_runner(*args: object, **kwargs: object) -> None:
+    """Placeholder runner callable for v1 dispatcher registration."""
+    raise NotImplementedError("bash_runner is not implemented in v1")
