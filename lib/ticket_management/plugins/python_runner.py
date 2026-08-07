@@ -6,3 +6,8 @@ and event payload, and returning the runner result to the Executor.
 
 TODO(Phase D): implement invocation contract.
 """
+
+
+def python_runner(*args: object, **kwargs: object) -> None:
+    """Placeholder runner callable for v1 dispatcher registration."""
+    raise NotImplementedError("python_runner is not implemented in v1")
