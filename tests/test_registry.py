@@ -13,8 +13,8 @@ from lib.ticket_management.runtime.registry import (
     Registry,
     TicketRef,
     discover_tickets,
-    load_relationship_index,
 )
+from lib.ticket_management.relationships import build_relationship_index
 
 
 # --------------------------------------------------------------------------- #
@@ -184,8 +184,8 @@ def test_load_relationship_index(tmp_path: Path) -> None:
             "id": "CHILD",
             "title": "Child",
             "kind": "ticket",
-            "parent": "PARENT",
             "owner": {"name": "igor", "type": "user"},
+            "parent": "PARENT",
         },
     )
     _write_json(
@@ -197,10 +197,11 @@ def test_load_relationship_index(tmp_path: Path) -> None:
             "owner": {"name": "igor", "type": "user"},
         },
     )
-    idx = load_relationship_index(str(repo))
+    idx = build_relationship_index(str(repo))
     assert "CHILD" in idx
-    assert idx["CHILD"] == {"PARENT"}
-    assert "PARENT" not in idx
+    # Canonical B2 index: parent edge + derived children mirror.
+    assert idx["CHILD"]["parent"] == {"PARENT"}
+    assert idx["PARENT"]["children"] == {"CHILD"}
 
 
 # --------------------------------------------------------------------------- #

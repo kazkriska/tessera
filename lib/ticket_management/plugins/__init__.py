@@ -3,5 +3,6 @@
 Each runner adapts a hook/action descriptor to a concrete interpreter
 invocation under the Executor's isolation rules.
 
-TODO(Phase D): register runners through a plugin lookup.
+Runners are registered through :data:`lib.ticket_management.runtime.executor.RUNNERS`
+(keyed by ``shell`` name) and resolved by :func:`...dispatcher.resolve_runner`.
 """

@@ -87,6 +87,8 @@ class Pipeline:
         self.bus = EventBus()
         self.watcher = FsWatcher()
         self.watcher.watch(str(self.repo), self.bus, self.config)
+        # Start the inotify loop in a daemon thread (returns immediately).
+        self.watcher.start(block=False)
 
         # Scheduler runner = the dispatcher glue (executor_dispatch).
         lock_dir = (

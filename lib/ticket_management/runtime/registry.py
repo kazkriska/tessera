@@ -6,8 +6,6 @@ Implements:
   dirs and return typed :class:`TicketRef` descriptors.
 * :class:`Registry` — WAL-mode SQLite store of discovered tickets (derived,
   rebuildable per Invariant I-9).
-* :func:`load_relationship_index` — minimal parent adjacency from
-  ``metadata.json`` (B2 fleshes this out).
 """
 
 from __future__ import annotations
@@ -28,7 +26,6 @@ __all__ = [
     "TicketRef",
     "discover_tickets",
     "Registry",
-    "load_relationship_index",
 ]
 
 
@@ -281,31 +278,4 @@ class Registry:
         self._conn.close()
 
 
-# --------------------------------------------------------------------------- #
-# Relationship index (B1 minimal stub)
-# --------------------------------------------------------------------------- #
-def load_relationship_index(repo_path: str) -> dict[str, set[str]]:
-    """Return adjacency ``{ticket_id: {parent_id}}``.
 
-    Reads the ``parent`` field from each ticket's ``metadata.json``.  B2 will
-    expand this to cover the full graph edge vocabulary.
-    """
-    repo = Path(repo_path).resolve()
-    tickets_root = repo / "TicketsRepository"
-    index: dict[str, set[str]] = {}
-    if not tickets_root.is_dir():
-        return index
-
-    for metadata_path in tickets_root.rglob("metadata.json"):
-        try:
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        ticket_id = metadata.get("id")
-        parent = metadata.get("parent")
-        if not ticket_id:
-            continue
-        if isinstance(parent, str) and parent:
-            index.setdefault(ticket_id, set()).add(parent)
-
-    return index
