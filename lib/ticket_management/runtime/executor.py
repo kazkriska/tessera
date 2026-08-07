@@ -139,7 +139,7 @@ def run_hook(
 
     try:
         exit_code, stdout, stderr = runner(
-            str(resolved),
+            str(resolved) if resolved.is_file() else descriptor.path,
             str(root),
             exec_env,
             timeout,

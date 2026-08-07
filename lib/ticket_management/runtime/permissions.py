@@ -89,6 +89,57 @@ def _parse_escalations(raw: Any) -> dict[str, set[str]]:
     return out
 
 
+def _normalize_path_capability(family: str, path: str) -> str:
+    """Map a documented filesystem path (e.g. ``task/**``) to a capability.
+
+    A trailing ``/**`` (or ``/*``) becomes a directory-level grant (prefix
+    match), e.g. ``fs.read:task/**`` -> ``fs.read:task``.
+    """
+    clean = path.strip().rstrip("/")
+    if clean.endswith("/**") or clean.endswith("/*"):
+        clean = clean[:-2].rstrip("/")
+    return f"{family}:{clean}" if clean else family
+
+
+def _translate_documented_grammar(permissions: dict[str, Any]) -> tuple[list[str], dict[str, set[str]]]:
+    """Translate the Part IX §4.1 manifest grammar into capabilities.
+
+    Documented grammar (Part V §4.2, Part IX §4.1)::
+
+        permissions:
+          filesystem:
+            read:  [task/**, metadata.json]
+            write: [state.json, activity.jsonl]
+          network: false        # true -> net.http:*
+          subprocess: true      # true -> run:*
+          secrets: false        # true -> secrets
+
+    Returns ``(capabilities, escalations)``.
+    """
+    caps: list[str] = []
+    escalations: dict[str, set[str]] = {}
+
+    filesystem = permissions.get("filesystem") or {}
+    if isinstance(filesystem, dict):
+        for path in _parse_capabilities(filesystem.get("read")):
+            cap = _normalize_path_capability("fs.read", path)
+            if cap not in caps:
+                caps.append(cap)
+        for path in _parse_capabilities(filesystem.get("write")):
+            cap = _normalize_path_capability("fs.write", path)
+            if cap not in caps:
+                caps.append(cap)
+
+    if permissions.get("network"):
+        caps.append("net.http:*")
+    if permissions.get("subprocess"):
+        caps.append("run:*")
+    if permissions.get("secrets"):
+        caps.append("secrets")
+
+    return caps, escalations
+
+
 @dataclass(frozen=True)
 class PermissionSet:
     """A ticket's granted capabilities plus static escalation grants.
@@ -105,18 +156,28 @@ class PermissionSet:
     def from_manifest(cls, manifest_permissions: dict[str, Any] | None) -> "PermissionSet":
         """Build a ``PermissionSet`` from a manifest ``permissions:`` block.
 
-        Accepts either the canonical shape
-        ``{"capabilities": [...], "escalations": {...}}`` or a bare list of
+        Accepts either the documented Part IX §4.1 grammar
+        (``filesystem: {read, write}`` / ``network`` / ``subprocess`` /
+        ``secrets``), the canonical capability form
+        ``{"capabilities": [...], "escalations": {...}}``, or a bare list of
         capability strings.
+
+        When no ``permissions`` block is declared, Part IX §4.2 safe defaults
+        apply: read access to the Ticket's own directory, write access to
+        ``state.json`` / ``activity.jsonl``, ``subprocess: true``, no network,
+        no secrets.
         """
         raw = manifest_permissions or {}
         if isinstance(raw, (list, tuple, set, str)):
             caps = _parse_capabilities(raw)
             escalations: dict[str, set[str]] = {}
         elif isinstance(raw, dict):
-            if "capabilities" in raw:
+            if "capabilities" in raw or "escalations" in raw:
                 caps = _parse_capabilities(raw.get("capabilities"))
                 escalations = _parse_escalations(raw.get("escalations"))
+            elif any(key in raw for key in ("filesystem", "network", "subprocess", "secrets")):
+                # Part IX §4.1 documented grammar.
+                caps, escalations = _translate_documented_grammar(raw)
             else:
                 # Bare mapping of capability -> enabled.
                 caps = _parse_capabilities(raw)
@@ -125,6 +186,10 @@ class PermissionSet:
             raise ValueError(
                 f"permissions must be a mapping or list, got {type(raw).__name__}"
             )
+
+        if raw is None or raw == {}:
+            # Part IX §4.2 safe baseline.
+            caps = ["fs.read:.", "fs.write:state.json", "fs.write:activity.jsonl", "run:*"]
 
         for cap in caps:
             denylist_reject(cap)
@@ -139,10 +204,19 @@ class PermissionSet:
         )
 
     def has(self, capability: str) -> bool:
-        """Exact or prefix match for *capability* against this set."""
+        """Exact or prefix match for *capability* against this set.
+
+        ``*``-wildcard grants (``net.http:*``, ``run:*`` from the translated
+        Part IX grammar) match any value in that family.
+        """
         if capability in self.capabilities:
             return True
         for granted in self.capabilities:
+            if granted.endswith(":*"):
+                family = granted[:-2]
+                if capability.startswith(family + ":"):
+                    return True
+                continue
             if ":" in granted:
                 if capability.startswith(granted + "/") or capability.startswith(
                     granted + ":"
@@ -178,6 +252,15 @@ def effective_permissions(ticket_metadata: dict[str, Any] | None) -> dict[str, A
     for raw in (raw_metadata, raw_manifest):
         raw = raw or {}
         if isinstance(raw, dict):
+            if any(key in raw for key in ("filesystem", "network", "subprocess", "secrets")):
+                caps_doc, esc_doc = _translate_documented_grammar(raw)
+                for cap in caps_doc:
+                    if cap not in seen:
+                        seen.add(cap)
+                        merged_caps.append(cap)
+                for target, granted in esc_doc.items():
+                    merged_escalations.setdefault(target, set()).update(granted)
+                continue
             caps = _parse_capabilities(raw.get("capabilities", raw))
             for cap in caps:
                 if cap not in seen:

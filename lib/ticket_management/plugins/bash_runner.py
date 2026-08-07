@@ -22,14 +22,17 @@ def bash_runner(
     env: dict[str, Any],
     timeout: int | None = None,
 ) -> tuple[int, str, str]:
-    """Run *script_path* with ``/bin/bash``."""
-    if not os.path.isfile(script_path):
-        raise FileNotFoundError(f"script not found: {script_path}")
+    """Run *script_path* with ``/bin/bash`` (inline command via ``-c`` when
+    the path is not an existing file)."""
+    if os.path.isfile(script_path):
+        argv = ["/bin/bash", script_path]
+    else:
+        argv = ["/bin/bash", "-c", script_path]
 
     run_env = {**os.environ, **dict(env)}
 
     proc = subprocess.Popen(
-        ["/bin/bash", script_path],
+        argv,
         cwd=ticket_root,
         env=run_env,
         preexec_fn=os.setsid,

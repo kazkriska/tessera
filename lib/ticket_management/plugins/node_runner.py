@@ -23,13 +23,15 @@ def node_runner(
     timeout: int | None = None,
 ) -> tuple[int, str, str]:
     """Run *script_path* with ``node``."""
-    if not os.path.isfile(script_path):
-        raise FileNotFoundError(f"script not found: {script_path}")
+    if os.path.isfile(script_path):
+        argv = ["node", script_path]
+    else:
+        argv = ["node", "-e", script_path]
 
     run_env = {**os.environ, **dict(env)}
 
     proc = subprocess.Popen(
-        ["node", script_path],
+        argv,
         cwd=ticket_root,
         env=run_env,
         preexec_fn=os.setsid,

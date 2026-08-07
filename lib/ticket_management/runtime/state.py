@@ -18,7 +18,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from lib.ticket_management.models import StateStatus, TicketState, atomic_write_json, read_json
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+from lib.ticket_management.models import (
+    StateStatus,
+    TicketState,
+    append_activity,
+    atomic_write_json,
+    read_json,
+)
+from lib.ticket_management.runtime.bus import Event
 
 __all__ = [
     "StateStatus",
@@ -97,6 +109,7 @@ def transition(
     to_status: StateStatus | str,
     registry: Any = None,
     reason: str | None = None,
+    activity_path: str | Path | None = None,
 ) -> TransitionResult:
     """Validate and apply a lifecycle transition.
 
@@ -104,6 +117,10 @@ def transition(
     the transition is illegal. ``registry`` is accepted for API compatibility
     (the scheduler may pass a Registry for dependency checks); the v1 table
     is static and does not consult it.
+
+    When *activity_path* (``activity.jsonl``) is given, the transition is
+    appended to it (Part VI §5: every transition is recorded). Values are
+    lowercase per CONTRACTS.md §1.
     """
     src = StateStatus(from_status)
     dst = StateStatus(to_status)
@@ -115,6 +132,22 @@ def transition(
         )
 
     state = TicketState(status=src).transition(dst, reason=reason)
+
+    if activity_path is not None:
+        append_activity(
+            activity_path,
+            {
+                "ts": _utcnow().isoformat(),
+                "event": (
+                    "ticket.reinitialized"
+                    if src == StateStatus.ARCHIVED and dst == StateStatus.INITIALIZED
+                    else f"ticket.{dst.value}"
+                ),
+                "from": src.value,
+                "to": dst.value,
+            },
+        )
+
     return TransitionResult(
         ticket_id=ticket_id,
         from_status=src,
@@ -149,7 +182,7 @@ def emit_lifecycle_event(
     if src != dst and dst not in LEGAL_TRANSITIONS.get(src, set()):
         if bus is not None:
             bus.publish(
-                bus.Event(
+                Event(
                     name="ticket.transition.rejected",
                     ticket_id=ticket_id,
                     data={"from": src.value, "to": dst.value},
@@ -164,7 +197,7 @@ def emit_lifecycle_event(
 
     if bus is not None:
         bus.publish(
-            bus.Event(
+            Event(
                 name=event_name,
                 ticket_id=ticket_id,
                 data={"from": src.value, "to": dst.value},

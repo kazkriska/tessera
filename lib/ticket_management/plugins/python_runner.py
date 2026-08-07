@@ -87,13 +87,14 @@ def python_runner(
     (``python3`` in normal operation), which guarantees the runtime's own
     interpreter runs hooks.
     """
-    if not os.path.isfile(script_path):
-        raise FileNotFoundError(f"script not found: {script_path}")
     python_bin = (
         sys.executable
         if os.path.basename(sys.executable).startswith("python")
         else "python3"
     )
-    return _run_with_timeout(
-        [python_bin, script_path], ticket_root, dict(env), timeout
-    )
+    if os.path.isfile(script_path):
+        cmd = [python_bin, script_path]
+    else:
+        # Inline command: run through the interpreter with -c.
+        cmd = [python_bin, "-c", script_path]
+    return _run_with_timeout(cmd, ticket_root, dict(env), timeout)

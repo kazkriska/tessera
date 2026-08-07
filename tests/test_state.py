@@ -118,3 +118,31 @@ def test_transition_table_covers_all_states():
     # Every state is a key in the table (or handled as a no-op).
     for status in StateStatus:
         assert status in LEGAL_TRANSITIONS
+
+
+def test_transition_appends_to_activity_jsonl(tmp_path: Path):
+    """Part VI §5: every transition records a line in activity.jsonl."""
+    import json as _json
+
+    activity_path = tmp_path / "activity.jsonl"
+    result = transition(
+        "T-001", StateStatus.CREATED, StateStatus.INITIALIZED,
+        activity_path=activity_path,
+    )
+    assert result.allowed
+    assert activity_path.is_file()
+    lines = activity_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    record = _json.loads(lines[0])
+    assert record["event"] == "ticket.initialized"
+    assert record["from"] == "created"
+    assert record["to"] == "initialized"
+    assert "ts" in record
+
+    # Archived -> Initialized emits ticket.reinitialized in the log.
+    transition(
+        "T-001", StateStatus.ARCHIVED, StateStatus.INITIALIZED,
+        activity_path=activity_path,
+    )
+    lines = activity_path.read_text(encoding="utf-8").strip().splitlines()
+    assert _json.loads(lines[-1])["event"] == "ticket.reinitialized"

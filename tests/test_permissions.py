@@ -106,3 +106,36 @@ def test_effective_permissions_merge() -> None:
     assert "fs.write:data" in caps
     assert "secrets" in caps  # merged from metadata defaults
     assert merged["escalations"] == {"deploy": ["secrets"]}
+
+
+def test_from_manifest_accepts_documented_part_ix_grammar() -> None:
+    """Part IX §4.1 / Part V §4.2 grammar: filesystem/network/subprocess/secrets."""
+    ps = PermissionSet.from_manifest(
+        {
+            "filesystem": {"read": ["task/**", "metadata.json"], "write": ["state.json"]},
+            "network": True,
+            "subprocess": True,
+            "secrets": False,
+        }
+    )
+    # read dir grant covers children
+    assert ps.has("fs.read:task/report.txt")
+    assert ps.has("fs.read:metadata.json")
+    assert ps.has("fs.write:state.json")
+    assert not ps.has("fs.write:task/other.txt")
+    # network true -> wildcard host grant
+    assert ps.has("net.http:api.example.com")
+    # subprocess true -> any shell
+    assert ps.has("run:bash")
+    assert not ps.has("secrets")
+
+
+def test_defaults_when_no_permissions_declared() -> None:
+    """Part IX §4.2 safe baseline applies when the manifest declares nothing."""
+    ps = PermissionSet.from_manifest(None)
+    assert ps.has("fs.read:.")
+    assert ps.has("fs.write:state.json")
+    assert ps.has("fs.write:activity.jsonl")
+    assert ps.has("run:bash")
+    assert not ps.has("net.http:api.example.com")
+    assert not ps.has("secrets")

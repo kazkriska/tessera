@@ -22,6 +22,7 @@ dev = [
 ]
 
 [project.scripts]
+ticket = "ticket_management.cli:main"
 tessera = "ticket_management.cli:main"
 
 [tool.hatch.build.targets.wheel]
