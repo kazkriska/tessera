@@ -94,3 +94,39 @@ def test_executor_env_merge_order_and_secrets():
     assert env["B"] == "event"  # event layer wins
     assert env["C"] == "manifest"
     assert env["TOKEN"] == "s3cr3t"
+
+
+def test_resolve_ticket_env_global_and_inherit(tmp_path: Path):
+    """Global Tickets/.env -> Ticket .env, with env.inherit:false opt-out."""
+    from lib.ticket_management.runtime.env import resolve_ticket_env
+
+    repo = tmp_path / "framework"
+    tickets = repo / "TicketsRepository"
+    tickets.mkdir(parents=True)
+    (tickets / ".env").write_text("GLOBAL_KEY=from-global\nSHARED=global-value\n")
+    tdir = tickets / "T-1.ticket"
+    tdir.mkdir()
+    (tdir / ".env").write_text("TICKET_KEY=from-ticket\nSHARED=ticket-value\n")
+
+    env = resolve_ticket_env(tdir, base_env={"BASE": "x"})
+    assert env["GLOBAL_KEY"] == "from-global"
+    assert env["TICKET_KEY"] == "from-ticket"
+    # Ticket overrides global on collision.
+    assert env["SHARED"] == "ticket-value"
+    assert env["BASE"] == "x"
+
+    # env.inherit: false suppresses the global layer (RFC-0003).
+    (tdir / "MANIFEST.yaml").write_text(
+        "apiVersion: ticket/v1\n"
+        "kind: Ticket\n"
+        "metadata:\n"
+        "  id: T-1\n"
+        "  title: Test ticket\n"
+        "  type: task\n"
+        "env:\n"
+        "  inherit: false\n"
+    )
+    env2 = resolve_ticket_env(tdir, base_env={"BASE": "x"})
+    assert "GLOBAL_KEY" not in env2
+    assert env2["TICKET_KEY"] == "from-ticket"
+    assert env2["SHARED"] == "ticket-value"

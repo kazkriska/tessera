@@ -54,18 +54,32 @@ class RuntimeServer:
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._stop_requested = False
 
     # ------------------------------------------------------------------ #
     # Lifecycle
     # ------------------------------------------------------------------ #
     def start(self) -> Path:
-        """Boot the pipeline and begin serving on ``runtime.sock``."""
+        """Boot the pipeline and begin serving on ``runtime.sock``.
+
+        Singleton (Invariant I-6): if a *live* runtime already owns the
+        socket, this raises. A stale socket left by a crashed runtime
+        (``kill -9``) is detected by probing the socket and reaped before
+        binding (RFC-0004 failure modes: "Stale socket → reaped on boot").
+        """
         sock_path = runtime_socket_path(self.root)
         if sock_path.exists():
-            raise RuntimeError(
-                f"runtime already running at {sock_path} (singleton, Invariant I-6); "
-                "use 'tessera runtime status' or 'tessera runtime stop'"
-            )
+            if _socket_is_live(sock_path):
+                raise RuntimeError(
+                    f"runtime already running at {sock_path} (singleton, Invariant I-6); "
+                    "use 'tessera runtime status' or 'tessera runtime stop'"
+                )
+            # Stale socket from a crashed runtime: unlink and continue.
+            logger.warning("runtime: reaping stale socket %s", sock_path)
+            try:
+                sock_path.unlink()
+            except OSError:
+                pass
         sock_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.pipeline = Pipeline(root=self.root, config=self.config)
@@ -83,6 +97,10 @@ class RuntimeServer:
         self._thread.start()
         logger.info("runtime server listening at %s", sock_path)
         return sock_path
+
+    def wait(self) -> None:
+        """Block until ``stop()`` is requested (daemon main loop)."""
+        self._stop.wait()
 
     def stop(self) -> None:
         """Graceful shutdown: stop accepting, close socket, stop pipeline."""
@@ -147,6 +165,10 @@ class RuntimeServer:
                         )
                     except OSError:
                         return
+                    # Shutdown RPC: stop AFTER the response reaches the client.
+                    if self._stop_requested:
+                        self.stop()
+                        return
 
     def _dispatch(self, request: dict[str, Any]) -> Any:
         method = request.get("method")
@@ -197,9 +219,50 @@ class RuntimeServer:
             _write_state(state_path, result.state)
             return {"ticket_id": ticket_id, "to_status": result.to_status.value}
         if method == "invoke_action":
-            raise NotImplementedError(
-                "invoke_action over the socket lands with the H1 hardening pass"
+            if self.pipeline is None:
+                raise RuntimeError("runtime not initialized")
+            from lib.ticket_management.runtime.dispatcher import RunnerDescriptor
+            from lib.ticket_management.runtime.executor import run_hook
+            from lib.ticket_management.runtime.manifest import (
+                ManifestValidationError,
+                load_manifest,
             )
+
+            ticket_id = params.get("ticket_id")
+            action = params.get("action")
+            ticket_dir = self.root / "TicketsRepository" / f"{ticket_id}.ticket"
+            manifest_path = ticket_dir / "MANIFEST.yaml"
+            if not manifest_path.is_file():
+                raise RuntimeError(f"ticket {ticket_id!r} has no MANIFEST.yaml")
+            try:
+                manifest = load_manifest(manifest_path, ticket_id=ticket_id)
+            except ManifestValidationError as exc:
+                raise RuntimeError(f"invalid manifest for {ticket_id!r}: {exc}") from exc
+            descriptor = (manifest.actions or {}).get(action)
+            if descriptor is None:
+                raise RuntimeError(
+                    f"action {action!r} not declared in MANIFEST.yaml for {ticket_id}"
+                )
+            runner = RunnerDescriptor(
+                path=descriptor.run,
+                shell=descriptor.shell,
+                timeout=descriptor.timeout,
+                retry=descriptor.retry or 0,
+                **{"async": descriptor.is_async},
+            )
+            result = run_hook(
+                descriptor=runner,
+                ticket_root=ticket_dir,
+                config=self.config,
+                permissions=manifest.permissions,
+            )
+            return {
+                "ticket_id": ticket_id,
+                "action": action,
+                "exit_code": result.exit_code,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
         if method == "emit":
             if self.pipeline is None or self.pipeline.bus is None:
                 raise RuntimeError("runtime not initialized")
@@ -214,7 +277,7 @@ class RuntimeServer:
             )
             return {"published": params.get("event_name")}
         if method == "shutdown":
-            self.stop()
+            self._stop_requested = True
             return {"stopped": True}
         raise RuntimeError(f"unknown method {method!r}")
 
@@ -229,6 +292,25 @@ def _load_state(path: Path) -> str:
         return TicketState.load(path).status.value
     except Exception:  # noqa: BLE001
         return "created"
+
+
+def _socket_is_live(sock_path: Path) -> bool:
+    """True if a runtime process is actually listening on *sock_path*.
+
+    A leftover socket file from a crashed runtime accepts a connection
+    attempt but refuses it (ECONNREFUSED), which is how we distinguish a
+    live singleton from a stale artifact (RFC-0004: stale socket reaped on
+    boot; Invariant I-6: one runtime per repository).
+    """
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.settimeout(1.0)
+    try:
+        probe.connect(str(sock_path))
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
 
 
 def _write_state(path: Path, state: Any) -> None:

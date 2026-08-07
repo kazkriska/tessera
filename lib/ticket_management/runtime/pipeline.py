@@ -76,15 +76,30 @@ class Pipeline:
         self.registry = Registry(str(self.repo))
         rescan(self.repo, self.registry)
 
+        # Reap stale ticket locks left by a crashed runtime (RFC-0006).
+        from lib.ticket_management.runtime.scheduler import reap_stale_locks
+
+        lock_dir = self.repo / "TicketsRepository" / ".ticket-runtime" / "locks"
+        reaped = reap_stale_locks(lock_dir)
+        if reaped:
+            logger.info("pipeline: reaped %d stale lock(s) at boot", reaped)
+
         self.bus = EventBus()
         self.watcher = FsWatcher()
         self.watcher.watch(str(self.repo), self.bus, self.config)
 
         # Scheduler runner = the dispatcher glue (executor_dispatch).
+        lock_dir = (
+            self.repo
+            / "TicketsRepository"
+            / ".ticket-runtime"
+            / "locks"
+        )
         self.scheduler = Scheduler(
             config=self.config,
             registry=self.registry,
             runner=executor_dispatch,
+            lock_dir=lock_dir,
         )
 
         # Bus -> Scheduler: every domain event on a known ticket triggers a

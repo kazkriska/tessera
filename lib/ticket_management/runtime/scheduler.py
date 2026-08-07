@@ -27,7 +27,46 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "ScheduledJob",
     "Scheduler",
+    "reap_stale_locks",
 ]
+
+
+def reap_stale_locks(lock_dir: str | Path) -> int:
+    """Remove lock files no process currently holds.
+
+    ``fcntl.flock`` locks are released by the kernel on process death, but
+    the lock *files* linger after a crash (``kill -9``). Reaping on boot
+    (RFC-0006: "Stale locks (from crashed runtime) reaped on boot") tries a
+    non-blocking exclusive lock on every ``*.lock``: if it succeeds, no
+    holder exists and the file is safe to unlink.
+
+    Returns the number of reaped files.
+    """
+    lock_path = Path(lock_dir)
+    if not lock_path.is_dir():
+        return 0
+    reaped = 0
+    for lock_file in sorted(lock_path.glob("*.lock")):
+        fd = -1
+        try:
+            fd = os.open(str(lock_file), os.O_RDWR)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                # Still held by a live process: leave it alone.
+                continue
+            # Acquired => nobody holds it; stale artifact.
+            lock_file.unlink()
+            reaped += 1
+        except OSError:
+            continue
+        finally:
+            if fd != -1:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+    return reaped
 
 
 @dataclass
