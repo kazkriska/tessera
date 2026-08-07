@@ -237,6 +237,34 @@ These are not spec contradictions but binding build choices so sub-agents don't 
 
 - **Python:** pin `requires-python = ">=3.12"`. System `python3` here is **3.11.15** — insufficient.
   Provision 3.12 via `uv` (already installed, v0.12.0). Runtime runs under a `uv` venv, never system python.
+
+### 7.1 Canonical repository layout (supersedes doc spelling)
+
+The docs use `lib/ticket-management/` and `Tickets/` (`= TicketRepository`). For v1 we adopt:
+
+```
+<repo root>/
+├── pyproject.toml              # uv, requires-python >=3.12, console script `tessera`
+├── lib/ticket_management/      # the runtime ENGINE (importable package; underscore)
+│   ├── runtime/                # watcher, dispatcher, manifest, executor, state, env
+│   ├── plugins/                # python_runner, bash_runner, node_runner
+│   └── cli.py                  # Typer CLI entry point
+├── tessera/                    # SDK CLIENT package (`Runtime` facade) — separate, per RFC-0010
+├── TicketsRepository/          # = TicketRepository (canonical name per CTO)
+│   └── .ticket-runtime/        # disposable runtime state (nested inside, per I-2)
+└── tests/
+```
+
+Decisions (CTO, ratified):
+- **`lib/ticket_management/`** (single package, underscore) — NOT `lib/ticket-management/ticket_management/`
+  (double nesting A1 first produced). Python cannot import a hyphenated dir; one underscore package.
+- **`TicketsRepository/`** is the canonical spelling of the docs' `TicketRepository`/`Tickets/`.
+  Contains `.ticket-runtime/` nested inside it (per Charter §5 / Part II §5).
+- **`Skills/` is NOT created** in v1 — it is a placeholder for a future resource type (RFC-0011).
+- **`tessera/` is required, not redundant** — Master Part XI / RFC-0010 mandate a separate SDK client
+  package published alongside the runtime. `tessera` depends on `lib.ticket_management`; never vice-versa.
+- `TicketsRepository/` and `.ticket-runtime/` are git-ignored (Invariant I-2); runtime creates them at boot.
+- All downstream tasks (A2 manifest, B3 repo init, G1 CLI/SDK) MUST use these exact paths.
 - **Package manager:** `uv` (spec-mandated in Master Part III / RFC-0004). `pyproject.toml` at
   `lib/ticket-management/`.
 - **YAML:** `PyYAML`. Strict loader requirement — reject anchors/aliases/merge keys. Implement by
