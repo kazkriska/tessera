@@ -13,6 +13,7 @@ Implements:
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -20,6 +21,8 @@ from pathlib import Path
 from typing import Optional
 
 from lib.ticket_management.models import ID_PATTERN
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "TicketRef",
@@ -127,6 +130,20 @@ class Registry:
         self._repo = Path(repo_path).resolve()
         self._db_path = self._repo / "TicketsRepository" / ".ticket-runtime" / "registry.db"
         self._ensure_dir()
+        try:
+            self._open()
+        except sqlite3.DatabaseError:
+            # Corrupt registry → recreate + rescan (RFC-0004 failure modes;
+            # Invariant I-9: the registry is derived and rebuildable).
+            logger.warning("registry: corrupt database %s; recreating", self._db_path)
+            self.close()
+            try:
+                self._db_path.unlink()
+            except OSError:
+                pass
+            self._open()
+
+    def _open(self) -> None:
         self._conn = sqlite3.connect(
             str(self._db_path),
             detect_types=sqlite3.PARSE_DECLTYPES,

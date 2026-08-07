@@ -58,15 +58,68 @@ def runtime_start(
     repo: Optional[str] = typer.Option(None, "--repo", help="Framework root"),
 ) -> None:
     """Boot the runtime daemon (singleton via runtime.sock)."""
-    root = _find_root(repo)
-    from lib.ticket_management.runtime.server import RuntimeServer
+    import subprocess
+    import sys
 
-    try:
-        sock = RuntimeServer(root).start()
-    except RuntimeError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1)
-    typer.echo(f"Runtime started (sock {sock})")
+    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
+    from lib.ticket_management.runtime.server import _socket_is_live, runtime_socket_path
+
+    root = _find_root(repo)
+    sock_path = runtime_socket_path(root)
+    if sock_path.exists():
+        # Live or stale — let the server decide, but for UX, a live one is an
+        # error; a stale one will be reaped by the daemon we're about to spawn.
+        if _socket_is_live(sock_path):
+            typer.echo(f"error: runtime already running at {sock_path}", err=True)
+            raise typer.Exit(1)
+
+    repo_init(root)
+    log_dir = root / "TicketsRepository" / RUNTIME_DIR_NAME / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "runtime.log"
+
+    # Detached daemon: a fresh interpreter runs the server and blocks in
+    # wait() until `runtime stop` sends the shutdown RPC.
+    daemon_code = (
+        "import sys, signal\n"
+        "from lib.ticket_management.config import RuntimeConfig\n"
+        "from lib.ticket_management.runtime.server import RuntimeServer\n"
+        f"root = {str(root)!r}\n"
+        "srv = RuntimeServer(root, RuntimeConfig())\n"
+        "def _term(*_):\n"
+        "    srv.stop()\n"
+        "signal.signal(signal.SIGTERM, _term)\n"
+        "signal.signal(signal.SIGINT, _term)\n"
+        "srv.start()\n"
+        "sys.stdout.write('READY\\n'); sys.stdout.flush()\n"
+        "srv.wait()\n"
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-c", daemon_code],
+        cwd=str(Path(__file__).resolve().parent.parent.parent),
+        stdout=open(log_file, "a"),
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    # Wait until the socket is live (or the daemon died).
+    import time
+
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        if _socket_is_live(sock_path):
+            typer.echo(f"Runtime started (sock {sock_path}, pid {proc.pid})")
+            return
+        if proc.poll() is not None:
+            typer.echo(
+                f"error: runtime daemon exited with code {proc.returncode}; "
+                f"see {log_file}",
+                err=True,
+            )
+            raise typer.Exit(1)
+        time.sleep(0.1)
+    typer.echo("error: runtime did not start within 15s", err=True)
+    raise typer.Exit(1)
 
 
 @runtime_app.command("stop")
@@ -75,7 +128,7 @@ def runtime_stop(
 ) -> None:
     """Graceful shutdown of the runtime daemon."""
     root = _find_root(repo)
-    from tessera import RuntimeNotRunning
+    from tessera import Runtime, RuntimeNotRunning
 
     try:
         client = Runtime.connect(repo=root)

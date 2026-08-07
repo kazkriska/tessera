@@ -60,16 +60,19 @@ def resolve_ticket_env(
 ) -> dict[str, str]:
     """Resolve the execution env for a ticket using canonical merge order.
 
-    Layers: System base -> Ticket ``.env`` -> Manifest ``env`` -> Event payload.
-    Manifest ``env`` is read from ``MANIFEST.yaml`` when present; ticket
-    ``.env`` from ``<ticket_root>/.env``. Secrets are injected only when
-    ``permissions`` grants ``secrets_enabled`` (delegated to
-    :func:`build_exec_env`).
+    Layers: System base -> Global ``Tickets/.env`` -> Ticket ``.env`` ->
+    Manifest ``env`` -> Event payload. Manifest ``env.inherit: false``
+    suppresses the global layer (RFC-0003 / RFC-0004: "Global ``Tickets/.env``
+    → Ticket ``.env`` (later overrides). ``env.inherit:false`` disables
+    global."). Secrets are injected only when ``permissions`` grants
+    ``secrets_enabled`` (delegated to :func:`build_exec_env`).
     """
     root = Path(ticket_root)
+    global_env: dict[str, str] = {}
     ticket_env = load_dotenv(root / ".env")
 
     manifest_env: dict[str, str] = {}
+    inherit_global = True
     manifest_path = root / "MANIFEST.yaml"
     if manifest_path.is_file():
         try:
@@ -77,14 +80,24 @@ def resolve_ticket_env(
 
             manifest = load_manifest(manifest_path)
             manifest_env = {
-                str(k): str(v) for k, v in (manifest.env or {}).items()
+                str(k): str(v)
+                for k, v in (manifest.env or {}).items()
+                if str(k) != "inherit"
             }
+            inherit_global = bool(
+                (manifest.env or {}).get("inherit", True)
+            )
         except Exception:  # noqa: BLE001 - malformed manifest => ignore env
             manifest_env = {}
 
+    if inherit_global:
+        # Global defaults live next to the repository's Tickets/ directory:
+        # <repo>/TicketsRepository/.env  (RFC-0004 / Master index note).
+        global_env = load_dotenv(root.parent / ".env")
+
     return build_exec_env(
         base_env=base_env,
-        ticket_env=ticket_env,
+        ticket_env={**global_env, **ticket_env},
         manifest_env=manifest_env,
         event_env=event_env,
         permissions=permissions,
