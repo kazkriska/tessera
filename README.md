@@ -9,16 +9,31 @@ No runtime behavior is implemented yet.
 ## Layout
 
 ```
-pyproject.toml            uv-managed project, requires-python >=3.12
-lib/ticket-management/    runtime home
-  ticket_management/      importable package (dir name must be a valid
-                          identifier, hence the nested package)
-    runtime/              watcher, dispatcher, manifest, executor, state, env
-    plugins/              python / bash / node runners
-    cli.py                typer CLI entry point
-tessera/                  SDK package (`Runtime` facade)
-tests/                    pytest suite
+pyproject.toml              uv-managed project, requires-python >=3.12
+lib/ticket_management/      the runtime (importable package; underscore name)
+  runtime/                  watcher, dispatcher, manifest, executor, state, env
+  plugins/                  python / bash / node runners
+  cli.py                    typer CLI entry point (console script: `tessera`)
+tessera/                    SDK client package (`Runtime` facade) — see note below
+TicketsRepository/          = TicketRepository (canonical, git-ignored at runtime)
+  .ticket-runtime/          disposable runtime state (registry.db, locks, sock…)
+tests/                      pytest suite
 ```
+
+> **Why two Python packages (`lib/ticket_management` and `tessera`)?**
+> The design spec (Master Part XI / RFC-0010) mandates a separate SDK client
+> package `tessera/` published *alongside* the runtime `lib/ticket-management/`.
+> The runtime is the engine; `tessera/` is the programmatic client (socket +
+> direct modes) that the CLI and external tools/agents import. They are not
+> redundant — `tessera/` depends on the runtime, not the other way around.
+
+> **`TicketsRepository/`** is our canonical spelling of the docs'
+> `TicketRepository`/`Tickets/` (the user renamed to avoid overloading
+> "workspace"). It holds Ticket directories and contains `.ticket-runtime/`.
+> It is git-ignored (Invariant I-2): the runtime creates it at boot.
+
+> **`Skills/`** from the docs is a placeholder for a future resource type and
+> is intentionally NOT created in v1.
 
 ## Contracts
 

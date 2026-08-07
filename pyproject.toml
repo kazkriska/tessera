@@ -25,7 +25,7 @@ dev = [
 tessera = "ticket_management.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["tessera", "lib/ticket-management/ticket_management"]
+packages = ["tessera", "lib/ticket_management"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
