@@ -1,0 +1,27 @@
+# Vendored spec reference (separate upstream repo — never commit)
+tessera-docs/
+
+# Disposable runtime state (Invariant I-2 / I-5)
+.ticket-runtime/
+Tickets/
+Skills/
+
+# Derived worktrees
+.worktrees/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# Secrets / local env
+.env
+*.local.env
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
