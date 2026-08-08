@@ -422,6 +422,43 @@ def test_invoke_action_over_socket(framework: Path) -> None:
         server.stop()
 
 
+def test_invoke_action_over_socket_daemon_mode_no_config(framework: Path) -> None:
+    """CMP-E2E-2: daemon-mode server (config=None) serves actions.
+
+    The CLI starts `RuntimeServer(root)` WITHOUT an explicit config; the
+    Pipeline resolves `.ticket-runtime/config.yaml` at boot. A previous bug
+    passed the raw (None) config to `run_hook`, crashing with
+    `'NoneType' object has no attribute 'default_timeout'`.
+    """
+    tdir = framework / REPO_DIR_NAME / "T-1.ticket"
+    (tdir / "MANIFEST.yaml").write_text(
+        "apiVersion: ticket/v1\n"
+        "kind: Ticket\n"
+        "metadata:\n"
+        "  id: T-1\n"
+        "  title: Test ticket\n"
+        "  type: task\n"
+        "actions:\n"
+        "  greet:\n"
+        "    run: echo daemon-mode-ok\n"
+        "    shell: bash\n"
+    )
+
+    # The daemon path: NO config argument (like `tessera runtime start`).
+    server = RuntimeServer(framework)
+    try:
+        server.start()
+        from tessera import Runtime
+
+        rt = Runtime.connect(repo=framework)
+        result = rt.invoke_action("T-1", "greet")
+        assert result["exit_code"] == 0
+        assert "daemon-mode-ok" in result["stdout"]
+        rt.close()
+    finally:
+        server.stop()
+
+
 def test_invoke_action_unknown_action_over_socket(framework: Path) -> None:
     """An undeclared action raises a clear SDK error over the socket."""
     tdir = framework / REPO_DIR_NAME / "T-1.ticket"

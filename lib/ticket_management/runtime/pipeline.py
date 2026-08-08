@@ -225,7 +225,11 @@ class Pipeline:
     def _ticket_root(self, ticket_id: str) -> Path | None:
         if self.repo is None:
             return None
-        candidate = self.repo / f"{ticket_id}.ticket"
+        # Tickets live under `<root>/TicketsRepository/<id>.ticket`;
+        # repo_init returns the framework root, not the repo dir.
+        from lib.ticket_management.repo import REPO_DIR_NAME
+
+        candidate = self.repo / REPO_DIR_NAME / f"{ticket_id}.ticket"
         return candidate if candidate.is_dir() else None
 
     # ------------------------------------------------------------------ #
