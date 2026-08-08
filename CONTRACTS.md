@@ -1,7 +1,7 @@
 # Tessera v1 — Consolidated Contracts & Decisions
 
 **Status:** Ratified (CTO sign-off, 2026-08-07)
-**Scope:** Binding resolutions to spec ambiguities found while reading `tessera-docs/`
+**Scope:** Binding resolutions to spec ambiguities found while reading `formal-specifications/`
 (Charter + Master Parts I–XII + RFC-0000…0012).
 **Authority:** Supersedes conflicting text in the source docs for any value defined here.
 Where a source doc and this file disagree, **this file wins** until the source doc is amended.
@@ -11,7 +11,7 @@ Where a source doc and this file disagree, **this file wins** until the source d
 
 ## 0. Why this doc exists
 
-The cloned `tessera-docs/` tree is unusually complete, but it contains **7 concrete contract
+The cloned `formal-specifications/` tree is unusually complete, but it contains **7 concrete contract
 contradictions** that would otherwise force the implementing engineer to guess. Phase A
 (`manifest.py` loader/validator + models) is where those guesses harden into code, so the
 resolutions below are locked *first*. Each item cites the conflicting source and the decision.
