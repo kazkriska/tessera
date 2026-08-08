@@ -115,6 +115,11 @@ created | initialized | ready | running | blocked | delegated | completed | arch
   fields are arrays of ticket ids.
 - Dangling ids are **ignored with a warning**, never fatal (Part IV §8).
 - `children` is a convenience mirror; the runtime may derive it but MUST accept it when present.
+- **Strict read policy (CMP-12 decision):** the six `required` fields are enforced on every read —
+  hand-written tickets must include `id`, `title`, `kind`, `type`, `created_at`, and `owner`.
+  There is no lenient-read path; a ticket missing any required field is rejected with a
+  `ValueError` naming the field. Defaults (`kind: ticket`, `created_at`) exist only for the
+  dataclass constructor, never for file reads.
 
 ---
 

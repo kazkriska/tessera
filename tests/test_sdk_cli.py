@@ -30,6 +30,7 @@ def repo(tmp_path: Path) -> Path:
                 "title": "Test ticket",
                 "type": "task",
                 "kind": "ticket",
+                "created_at": "2026-01-01T00:00:00Z",
                 "owner": {"name": "test", "type": "user"},
             }
         ),

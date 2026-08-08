@@ -70,6 +70,38 @@ def test_metadata_round_trip_preserves_relationship_fields():
     assert restored.created_at == meta.created_at
 
 
+@pytest.mark.parametrize("missing", ["id", "title", "kind", "type", "created_at", "owner"])
+def test_metadata_from_dict_requires_all_six_contract_fields(missing):
+    """CMP-12: CONTRACTS §2 requires all six fields on read (no lenient path)."""
+    data = {
+        "id": "t_1",
+        "title": "Hand-written",
+        "kind": "ticket",
+        "type": "task",
+        "created_at": "2026-08-07T12:00:00Z",
+        "owner": {"name": "k", "type": "user"},
+    }
+    del data[missing]
+    with pytest.raises(ValueError, match="missing required field"):
+        TicketMetadata.from_dict(data)
+
+
+def test_metadata_from_dict_accepts_complete_handwritten_ticket():
+    """CMP-12: a ticket with all six fields loads, exactly per CONTRACTS §2."""
+    meta = TicketMetadata.from_dict(
+        {
+            "id": "t_2",
+            "title": "Hand-written",
+            "kind": "ticket",
+            "type": "task",
+            "created_at": "2026-08-07T12:00:00Z",
+            "owner": {"name": "k", "type": "user"},
+        }
+    )
+    assert meta.id == "t_2"
+    assert meta.type == "task"
+
+
 @pytest.mark.parametrize("bad_id", ["has space", "bad/slash", "", "dot.id", None])
 def test_metadata_rejects_invalid_id(bad_id):
     with pytest.raises(ValueError):
