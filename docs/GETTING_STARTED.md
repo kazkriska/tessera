@@ -17,7 +17,7 @@ against the current `main` (v1.0.0).
 **End users** install Tessera with the one-line bootstrap (no source checkout needed):
 
 ```bash
-curl -fsSL https://github.com/kazkriska/tessera-v1/releases/download/v1.0.0/install.sh | bash
+curl -fsSL https://github.com/kazkriska/tessera/releases/download/v1.0.0/install.sh | bash
 ```
 
 This puts `tessera` and `ticket` on your `PATH` (under `~/.local/bin`). See
@@ -27,7 +27,7 @@ for the authoritative spec.
 **Contributors** (working from a source checkout) instead use the editable install:
 
 ```bash
-cd tessera-v1
+cd tessera
 uv venv
 uv pip install -e ".[dev]"
 ```
