@@ -1,18 +1,24 @@
-# Tessera v1 — dist/ source manifest
-#
-# The shippable source tree: runtime engine (src/tessera_runtime), SDK
-# (src/tessera_sdk), build metadata, locked dependencies, license, and the
-# standalone end-to-end smoke test. Verify with:
+# Tessera v1 — dist/ source manifest (regenerated from dist/tessera-1.0.0.tar.gz).
+# Documented scope: the exact payload shipped in the release tarball,
+# expressed with dist/-relative paths so it can be verified from the
+# dist/ staging directory:
 #     cd dist && sha256sum -c <(grep -v '^#' SOURCE_MANIFEST.txt)
 #
-# Excluded by design: tests/, docs/, formal-specifications/, TicketsRepository/,
-# .ticket-runtime/, .worktrees/, .hermes/, .venv/, __pycache__/, *.pyc.
-# files: 29
-
+# The tarball is built from the framework-root pyproject.toml/uv.lock/
+# LICENSE/README.md/src plus dist/install-modules and dist/e2e. Build
+# plumbing (install.sh, SOURCE_MANIFEST.txt, .distignore, *.tar.gz, *.sha256)
+# is NOT payload and is intentionally absent here.
+# files: 35
 9f37bdb9735ed7f3251b68934859fbb0769c0d5aa4527a47abc2bbbac4ee2cab  LICENSE
-3556db72d93689297be0f9a7b2802277080a846d40f1816fd71a3ad3cd9f597a  README.md
+c87617be0553ccfcc64d627662c14d3b4868c265d6d43197e71e9cdba9c05525  README.md
 0616eaaf9a88e7717dacdaf067ed2d18a58ace0179c3ca0f283b6b1465956c24  e2e/smoke_test.py
-9c6d29f39765714d6fad327db1cbc43c0d33a4d4d76bf676e90f43192f10d25e  pyproject.toml
+cdab60837144a5477f07766e1c47b704c9899aef5039cdcc4f64a8224f0b04a0  install-modules/00-precheck.sh
+9e930bccbb4997ff3b7b0ee67d2031c519a8ce9e531dcf875f439ad67a4f0415  install-modules/01-perms.sh
+005e96d15302db774df99e4b7a618c3fa7dc603f1993995bbbbcc51e980c264b  install-modules/02-scaffold.sh
+77ae8286639ee618e9fdfae85edfc5b51a18f9f21f6ec4715ebb94b8e665b8a1  install-modules/03-test.sh
+88942deb0c913735fec83c150d76bef2a018c0f382cea200cc30825fd2bed93f  install-modules/04-cleanup.sh
+8fac9511a67e9f81b8a1f399e82b53e8d3de3fac6ceacede8c4f083288e0da8f  install-modules/main.sh
+94921e1ba4630c774e59f32cc1160055f042be7d06ed7af11fd23e27977e696b  pyproject.toml
 4a6830d8c38314dac416ff6cf487c76eab4456a53db846c3517ea5f0ab21dffe  src/tessera_runtime/__init__.py
 0101f5b4677ebf66cf5bf9b05f1645917f580c4e7ec4567fe5815b9ad69e3e02  src/tessera_runtime/cli.py
 8843bbd0712494576773f7467647129260997d8d411bfa70b99dfae1e5601b9a  src/tessera_runtime/config.py
@@ -37,4 +43,4 @@ de58fc5b9d8eb3d2c3860b44a4e4d1305569d2ead67ecb94c60356f011fa7dfe  src/tessera_ru
 d728f8823cf348749330969a2b7069e4eddf8d6f74eafdca324771990c0c026a  src/tessera_runtime/runtime/state.py
 5b84258a736f803b3b56c3a35656bc3a77a971d9ed5886d1f9134c84226a73b8  src/tessera_runtime/runtime/watcher.py
 0c8e6a8348a39138eda2cad0015b1e5041ba207e94efcd333e594c17fe56dc33  src/tessera_sdk/__init__.py
-5161985a810de7f00f6eed4c54452678dd5a370d66a076db1c7dd0037e24e561  uv.lock
+54d771f68c5e133fb86c3c388d53e5864198c1be6fb2b3e3c9e3d561b9d54363  uv.lock

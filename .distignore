@@ -1,0 +1,55 @@
+# Tessera v1 — dist tarball exclusion list (authoritative).
+#
+# This file is the single source of truth for what the distribution tarball
+# MUST NOT contain. The tarball builder reads these patterns and refuses to
+# ship anything matching them. The authoritative manifest is RFC-0013 §5.
+#
+# The tarball ships exactly (RFC-0013 §5): pyproject.toml, uv.lock, LICENSE,
+# README.md, src/, install-modules/, e2e/. Everything else is excluded,
+# including the build plumbing below that lives in dist/ but is NOT payload.
+
+# --- Build plumbing (lives in dist/, never shipped) ---
+install.sh
+SOURCE_MANIFEST.txt
+.distignore
+*.tar.gz
+*.sha256
+
+# --- Never ship the staging dir or its outputs as payload ---
+dist/
+
+# --- Test suite (only the curated e2e/ subset ships) ---
+tests/
+test_*.py
+*_test.py
+
+# --- Vendored docs repo + framework meta (never shipped) ---
+formal-specifications/
+.hermes/
+.worktrees/
+
+# --- Runtime / repo state (Invariants I-2 / I-5) ---
+.ticket-runtime/
+TicketsRepository/
+Skills/
+.tickets/
+
+# --- Python / build cruft ---
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+build/
+dist-info/
+
+# --- Secrets / local env ---
+.env
+*.local.env
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
