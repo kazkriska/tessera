@@ -30,7 +30,32 @@ __all__ = [
     "Scheduler",
     "reap_stale_locks",
     "ticket_lock",
+    "action_lock",
 ]
+
+
+@contextlib.contextmanager
+def action_lock(
+    lock_dir: str | Path, ticket_id: str, action_name: str
+) -> Iterator[Path]:
+    """Exclusive ``fcntl.flock`` on ``locks/<ticket_id>.<action_name>.lock``.
+
+    RFC-0006:19: action-level locks serialize concurrent runs of the SAME
+    action on a ticket (a long hook must not start twice). Different
+    actions on the same ticket remain concurrent. Stale files are reaped
+    by :func:`reap_stale_locks` on boot (it globs ``*.lock``).
+    """
+    path = Path(lock_dir) / f"{ticket_id}.{action_name}.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield path
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 @contextlib.contextmanager
@@ -104,6 +129,7 @@ class ScheduledJob:
     config: RuntimeConfig
     event_payload: dict[str, Any] = field(default_factory=dict)
     priority: int = 2  # default band: hook
+    action_name: str | None = None  # RFC-0006:19 action-level lock key
     submitted_at: float = field(default_factory=time.time)
 
 
@@ -158,6 +184,7 @@ class Scheduler:
         config: RuntimeConfig | None = None,
         event_payload: dict[str, Any] | None = None,
         priority: int = 2,
+        action_name: str | None = None,
     ) -> None:
         """Queue *descriptor* for *ticket_id* (debounced by (id, run))."""
         job = ScheduledJob(
@@ -168,6 +195,7 @@ class Scheduler:
             config=config or self.config,
             event_payload=dict(event_payload or {}),
             priority=priority,
+            action_name=action_name,
         )
 
         with self._lock:
@@ -264,23 +292,28 @@ class Scheduler:
             attempt = 0
             while True:
                 try:
-                    with self._ticket_lock(job.ticket_id):
-                        if self.runner is not None:
-                            result = self.runner(
-                                job.ticket_id,
-                                job.descriptor,
-                                job.ticket_root,
-                                job.config,
-                                job.event_payload,
-                            )
-                        else:
-                            # No runner wired: report the would-be dispatch.
-                            result = {
-                                "ticket_id": job.ticket_id,
-                                "run": job.run,
-                                "attempt": attempt,
-                                "dispatched": True,
-                            }
+                    # RFC-0006:19: the same action on a ticket must not run
+                    # concurrently (a long hook starting twice). Different
+                    # actions on the same ticket stay concurrent.
+                    action_key = job.action_name or job.run
+                    with self._action_lock(job.ticket_id, action_key):
+                        with self._ticket_lock(job.ticket_id):
+                            if self.runner is not None:
+                                result = self.runner(
+                                    job.ticket_id,
+                                    job.descriptor,
+                                    job.ticket_root,
+                                    job.config,
+                                    job.event_payload,
+                                )
+                            else:
+                                # No runner wired: report the would-be dispatch.
+                                result = {
+                                    "ticket_id": job.ticket_id,
+                                    "run": job.run,
+                                    "attempt": attempt,
+                                    "dispatched": True,
+                                }
                     return result
                 except Exception as exc:  # noqa: BLE001
                     attempt += 1
@@ -362,3 +395,9 @@ class Scheduler:
 
     def _ticket_lock(self, ticket_id: str) -> "_TicketLock":
         return self._TicketLock(self._lock_dir / f"{ticket_id}.lock")
+
+    def _action_lock(
+        self, ticket_id: str, action_name: str
+    ) -> contextlib.AbstractContextManager[Path]:
+        """Exclusive flock on ``locks/<id>.<action>.lock`` (RFC-0006:19)."""
+        return action_lock(self._lock_dir, ticket_id, action_name)

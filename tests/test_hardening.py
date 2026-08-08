@@ -376,3 +376,135 @@ def test_parallel_socket_transitions_serialize(framework: Path) -> None:
         assert "updated_at" in final
     finally:
         server.stop()
+
+
+def test_parallel_same_action_serializes_over_socket(framework: Path) -> None:
+    """CMP-03 (RFC-0006:19): the same action must not run twice concurrently.
+
+    Two concurrent invoke_action calls for the same action on the same
+    ticket serialize under ``locks/<id>.<action>.lock``; wall time >= 2x a
+    single run proves no overlap.
+    """
+    import threading
+    import time as _time
+
+    tdir = framework / REPO_DIR_NAME / "T-1.ticket"
+    (tdir / "MANIFEST.yaml").write_text(
+        "apiVersion: ticket/v1\n"
+        "kind: Ticket\n"
+        "metadata:\n"
+        "  id: T-1\n"
+        "  title: Test ticket\n"
+        "  type: task\n"
+        "actions:\n"
+        "  slow:\n"
+        "    run: sleep 0.3\n"
+        "    shell: bash\n"
+    )
+
+    server = RuntimeServer(framework, RuntimeConfig(worker_concurrency=2))
+    try:
+        server.start()
+        from tessera import Runtime
+
+        rt = Runtime.connect(repo=framework)
+        results: list[dict] = []
+        errors: list[Exception] = []
+
+        def _go() -> None:
+            try:
+                results.append(rt.invoke_action("T-1", "slow"))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        start = _time.monotonic()
+        threads = [threading.Thread(target=_go) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=15)
+        elapsed = _time.monotonic() - start
+        rt.close()
+
+        assert not errors, f"action failed: {errors}"
+        assert len(results) == 2
+        # Serialized: two 0.3s runs cannot finish in < 0.45s wall time.
+        assert elapsed >= 0.45, f"same action overlapped (wall={elapsed:.2f}s)"
+        # Lock file exists (and follows the <id>.<action>.lock naming).
+        lock_file = (
+            framework / REPO_DIR_NAME / RUNTIME_DIR_NAME / "locks" / "T-1.slow.lock"
+        )
+        assert lock_file.exists()
+    finally:
+        server.stop()
+
+
+def test_different_actions_run_concurrently(framework: Path) -> None:
+    """CMP-03: distinct actions on the same ticket are NOT serialized."""
+    import threading
+    import time as _time
+
+    tdir = framework / REPO_DIR_NAME / "T-1.ticket"
+    (tdir / "MANIFEST.yaml").write_text(
+        "apiVersion: ticket/v1\n"
+        "kind: Ticket\n"
+        "metadata:\n"
+        "  id: T-1\n"
+        "  title: Test ticket\n"
+        "  type: task\n"
+        "actions:\n"
+        "  slow_a:\n"
+        "    run: sleep 0.3\n"
+        "    shell: bash\n"
+        "  slow_b:\n"
+        "    run: sleep 0.3\n"
+        "    shell: bash\n"
+    )
+
+    server = RuntimeServer(framework, RuntimeConfig(worker_concurrency=2))
+    try:
+        server.start()
+        from tessera import Runtime
+
+        rt = Runtime.connect(repo=framework)
+        results: list[dict] = []
+        errors: list[Exception] = []
+
+        def _go(action: str) -> None:
+            try:
+                results.append(rt.invoke_action("T-1", action))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        start = _time.monotonic()
+        threads = [
+            threading.Thread(target=_go, args=("slow_a",)),
+            threading.Thread(target=_go, args=("slow_b",)),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=15)
+        elapsed = _time.monotonic() - start
+        rt.close()
+
+        assert not errors, f"actions failed: {errors}"
+        assert len(results) == 2
+        # Overlapped: two parallel 0.3s runs finish well under 0.45s wall.
+        assert elapsed < 0.45, f"different actions serialized (wall={elapsed:.2f}s)"
+    finally:
+        server.stop()
+
+
+def test_action_lock_files_reaped_at_boot(framework: Path) -> None:
+    """CMP-03: stale action lock files are reaped like ticket locks."""
+    from lib.ticket_management.runtime.scheduler import reap_stale_locks
+
+    lock_dir = framework / REPO_DIR_NAME / RUNTIME_DIR_NAME / "locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    stale = lock_dir / "T-1.slow.lock"
+    stale.write_text("", encoding="utf-8")  # no process holds it
+
+    reaped = reap_stale_locks(lock_dir)
+    assert reaped >= 1
+    assert not stale.exists()
