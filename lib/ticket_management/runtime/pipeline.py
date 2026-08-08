@@ -87,13 +87,17 @@ class Pipeline:
             self.config = load_config(str(cfg_path))
 
         self.repo = repo_init(root)
-        self.registry = Registry(str(self.repo))
-        rescan(self.repo, self.registry)
 
         # Resolve config paths relative to the canonical runtime dir:
         # `<repo>/TicketsRepository/.ticket-runtime/`. CONTRACTS §5 names the
         # defaults (`locks`, `registry.db`) relative to that dir.
         runtime_dir = self.repo / "TicketsRepository" / ".ticket-runtime"
+        registry_path = Path(self.config.registry_path)
+        if not registry_path.is_absolute():
+            registry_path = runtime_dir / registry_path
+        self.registry = Registry(str(self.repo), db_path=registry_path)
+        rescan(self.repo, self.registry)
+
         lock_dir = Path(self.config.lock_dir)
         if not lock_dir.is_absolute():
             lock_dir = runtime_dir / lock_dir

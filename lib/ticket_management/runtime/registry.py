@@ -116,16 +116,22 @@ class Registry:
     """SQLite-backed, rebuildable ticket registry.
 
     The database lives at ``<repo>/TicketsRepository/.ticket-runtime/registry.db``
-    and is opened in WAL mode for concurrent reads.
+    (or ``db_path`` when given) and is opened in WAL mode for concurrent
+    reads.
 
     All row ``dict`` results use string column names; ``last_scanned`` values
     are ISO-8601 strings (sqlite3 ``PARSE_DECLTYPES`` is enabled but we
     serialize timestamps explicitly to keep the surface simple).
     """
 
-    def __init__(self, repo_path: str) -> None:
+    def __init__(self, repo_path: str, db_path: str | Path | None = None) -> None:
         self._repo = Path(repo_path).resolve()
-        self._db_path = self._repo / "TicketsRepository" / ".ticket-runtime" / "registry.db"
+        if db_path is None:
+            self._db_path = (
+                self._repo / "TicketsRepository" / ".ticket-runtime" / "registry.db"
+            )
+        else:
+            self._db_path = Path(db_path).resolve()
         self._ensure_dir()
         try:
             self._open()
