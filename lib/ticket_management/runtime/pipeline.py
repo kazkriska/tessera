@@ -66,6 +66,7 @@ class Pipeline:
     bus: EventBus | None = None
     watcher: FsWatcher | None = None
     scheduler: Scheduler | None = None
+    lock_dir: Path | None = None
 
     def start(self) -> None:
         """Assemble and start every stage in canonical order."""
@@ -104,6 +105,7 @@ class Pipeline:
         reaped = reap_stale_locks(lock_dir)
         if reaped:
             logger.info("pipeline: reaped %d stale lock(s) at boot", reaped)
+        self.lock_dir = lock_dir
 
         self.bus = EventBus(recursion_max_depth=self.config.recursion_max_depth)
         self.watcher = FsWatcher()
