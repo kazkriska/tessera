@@ -67,6 +67,7 @@ class Pipeline:
     watcher: FsWatcher | None = None
     scheduler: Scheduler | None = None
     lock_dir: Path | None = None
+    approval_cache_dir: Path | None = None
 
     def start(self) -> None:
         """Assemble and start every stage in canonical order."""
@@ -112,6 +113,15 @@ class Pipeline:
                 resolved_log = runtime_dir / resolved_log
             log_path = str(resolved_log.resolve())
         self._configure_logging(self.config, log_path)
+
+        # CONTRACTS §5: approval_cache_path — resolve against the runtime
+        # dir and ensure the directory exists (escalation requests persist
+        # here; the default is `.ticket-runtime/cache/approvals`).
+        approval_dir = Path(self.config.approval_cache_path)
+        if not approval_dir.is_absolute():
+            approval_dir = runtime_dir / approval_dir
+        approval_dir.mkdir(parents=True, exist_ok=True)
+        self.approval_cache_dir = approval_dir.resolve()
 
         # Reap stale ticket locks left by a crashed runtime (RFC-0006).
         from lib.ticket_management.runtime.scheduler import reap_stale_locks

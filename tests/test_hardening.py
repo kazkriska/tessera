@@ -234,6 +234,48 @@ def test_pipeline_honors_registry_path(tmp_path: Path) -> None:
         p.stop()
 
 
+def test_pipeline_wires_approval_cache_dir(tmp_path: Path) -> None:
+    """CMP-09: config.yaml approval_cache_path is honored (CONTRACTS §5)."""
+    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
+    from lib.ticket_management.runtime.pipeline import Pipeline
+
+    repo = repo_init(tmp_path / "fw")
+    runtime_dir = repo / "TicketsRepository" / RUNTIME_DIR_NAME
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    (runtime_dir / "config.yaml").write_text(
+        "approval_cache_path: my-approvals\n",
+        encoding="utf-8",
+    )
+
+    p = Pipeline(root=repo)
+    p.start()
+    try:
+        assert p.approval_cache_dir is not None
+        expected = (runtime_dir / "my-approvals").resolve()
+        assert p.approval_cache_dir == expected
+        assert expected.is_dir(), f"approval cache dir not created at {expected}"
+    finally:
+        p.stop()
+
+
+def test_record_approval_request_persists(tmp_path: Path) -> None:
+    """CMP-09: approval requests persist into the cache directory."""
+    import json
+
+    from lib.ticket_management.runtime.permissions import record_approval_request
+
+    cache_dir = tmp_path / "cache" / "approvals"
+    path = record_approval_request(
+        cache_dir, "T-1", "fs.write:secrets.json", reason="CI deploy"
+    )
+    assert path.is_file()
+    record = json.loads(path.read_text())
+    assert record["ticket_id"] == "T-1"
+    assert record["action"] == "fs.write:secrets.json"
+    assert record["status"] == "pending"
+    assert record["reason"] == "CI deploy"
+
+
 def test_pipeline_defaults_when_no_config(tmp_path: Path) -> None:
     """Missing config.yaml yields canonical defaults (Invariant I-2)."""
     from lib.ticket_management.runtime.pipeline import Pipeline
