@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from lib.ticket_management.config import RuntimeConfig
-from lib.ticket_management.runtime.bus import Event, EventBus
-from lib.ticket_management.runtime.watcher import FsWatcher
+from tessera_runtime.config import RuntimeConfig
+from tessera_runtime.runtime.bus import Event, EventBus
+from tessera_runtime.runtime.watcher import FsWatcher
 
 
 # --------------------------------------------------------------------------- #
@@ -119,7 +119,7 @@ def test_watcher_inotify_loop_emits_domain_event(tmp_path: Path):
     import threading
     import time as _time
 
-    from lib.ticket_management.config import RuntimeConfig
+    from tessera_runtime.config import RuntimeConfig
 
     tickets = tmp_path / "TicketsRepository"
     tickets.mkdir()
@@ -162,7 +162,7 @@ def test_watcher_survives_inotify_read_error(tmp_path: Path):
     import threading
     import time as _time
 
-    from lib.ticket_management.config import RuntimeConfig
+    from tessera_runtime.config import RuntimeConfig
 
     tickets = tmp_path / "TicketsRepository"
     tickets.mkdir()
@@ -189,7 +189,7 @@ def test_watcher_watches_nested_ticket_dirs(tmp_path: Path):
     """Events inside nested ticket/asset directories must fire (recursion)."""
     import time as _time
 
-    from lib.ticket_management.config import RuntimeConfig
+    from tessera_runtime.config import RuntimeConfig
 
     tickets = tmp_path / "TicketsRepository"
     nested = tickets / "HQ_BR-001.ticket" / "task" / "assets"

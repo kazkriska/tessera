@@ -14,7 +14,7 @@ from typing import Optional
 
 import typer
 
-from lib.ticket_management.config import RuntimeConfig, load_config
+from tessera_runtime.config import RuntimeConfig, load_config
 
 app = typer.Typer(
     name="tessera",
@@ -28,7 +28,7 @@ app.add_typer(repo_app, name="repo")
 
 
 def _find_root(path: str | None) -> Path:
-    from tessera import find_repo_root
+    from tessera_sdk import find_repo_root
 
     try:
         return find_repo_root(path)
@@ -39,7 +39,7 @@ def _find_root(path: str | None) -> Path:
 
 
 def _client(path: str | None, attach: bool = False):
-    from tessera import Runtime
+    from tessera_sdk import Runtime
 
     root = _find_root(path)
     if attach:
@@ -61,8 +61,8 @@ def runtime_start(
     import subprocess
     import sys
 
-    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
-    from lib.ticket_management.runtime.server import _socket_is_live, runtime_socket_path
+    from tessera_runtime.repo import RUNTIME_DIR_NAME, repo_init
+    from tessera_runtime.runtime.server import _socket_is_live, runtime_socket_path
 
     root = _find_root(repo)
     sock_path = runtime_socket_path(root)
@@ -82,7 +82,7 @@ def runtime_start(
     # wait() until `runtime stop` sends the shutdown RPC.
     daemon_code = (
         "import sys, signal\n"
-        "from lib.ticket_management.runtime.server import RuntimeServer\n"
+        "from tessera_runtime.runtime.server import RuntimeServer\n"
         f"root = {str(root)!r}\n"
         # No config passed: the Pipeline loads `.ticket-runtime/config.yaml`
         # itself at boot (RFC-0004 boot step 1), so user-set values apply.
@@ -129,7 +129,7 @@ def runtime_stop(
 ) -> None:
     """Graceful shutdown of the runtime daemon."""
     root = _find_root(repo)
-    from tessera import Runtime, RuntimeNotRunning
+    from tessera_sdk import Runtime, RuntimeNotRunning
 
     try:
         client = Runtime.connect(repo=root)
@@ -147,8 +147,8 @@ def runtime_status(
 ) -> None:
     """Show whether the runtime daemon is up and how many tickets it sees."""
     root = _find_root(repo)
-    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
-    from lib.ticket_management.runtime.server import runtime_socket_path
+    from tessera_runtime.repo import RUNTIME_DIR_NAME, repo_init
+    from tessera_runtime.runtime.server import runtime_socket_path
 
     sock = runtime_socket_path(root)
     running = sock.exists()
@@ -157,7 +157,7 @@ def runtime_status(
     typer.echo(f"running: {'yes' if running else 'no'}")
     if not running:
         return
-    from tessera import Runtime
+    from tessera_sdk import Runtime
 
     try:
         client = Runtime.connect(repo=root)
@@ -176,7 +176,7 @@ def repo_init_cmd(
     path: Optional[str] = typer.Argument(None, help="Directory to scaffold"),
 ) -> None:
     """Scaffold TicketRepository/ + .ticket-runtime/."""
-    from lib.ticket_management.repo import repo_init
+    from tessera_runtime.repo import repo_init
 
     root = Path(path).resolve() if path else Path.cwd().resolve()
     repo = repo_init(root)
@@ -188,7 +188,7 @@ def repo_scan(
     path: Optional[str] = typer.Argument(None, help="Framework root"),
 ) -> None:
     """Force rediscovery + registry rebuild."""
-    from lib.ticket_management.repo import rescan
+    from tessera_runtime.repo import rescan
 
     root = _find_root(path)
     result = rescan(root)
@@ -206,7 +206,7 @@ def create(
     repo: Optional[str] = typer.Option(None, "--repo", help="Framework root"),
 ) -> None:
     """Scaffold a new .ticket directory + minimal manifest."""
-    from lib.ticket_management.models import Owner, TicketMetadata
+    from tessera_runtime.models import Owner, TicketMetadata
 
     root = _find_root(repo)
     ticket_dir = root / "TicketsRepository" / f"{ticket_id}.ticket"
@@ -246,7 +246,7 @@ def inspect(
     repo: Optional[str] = typer.Option(None, "--repo", help="Framework root"),
 ) -> None:
     """Print metadata, state, and manifest summary for a ticket."""
-    from tessera import Runtime
+    from tessera_sdk import Runtime
 
     root = _find_root(repo)
     client = Runtime.direct(repo=root)
@@ -273,7 +273,7 @@ def transition_cmd(
     Mutating command: requires a running runtime (Part X §8); when the
     runtime is not running, errors with "start runtime".
     """
-    from tessera import Runtime
+    from tessera_sdk import Runtime
 
     root = _find_root(repo)
     if not _runtime_running(root):
@@ -299,7 +299,7 @@ def action_cmd(
     Mutating command: requires a running runtime (Part X §8); when the
     runtime is not running, errors with "start runtime".
     """
-    from tessera import Runtime
+    from tessera_sdk import Runtime
 
     root = _find_root(repo)
     if not _runtime_running(root):
@@ -326,7 +326,7 @@ def validate_cmd(
     repo: Optional[str] = typer.Option(None, "--repo", help="Framework root"),
 ) -> None:
     """Validate a ticket's MANIFEST.yaml against the schema."""
-    from lib.ticket_management.runtime.manifest import (
+    from tessera_runtime.runtime.manifest import (
         ManifestValidationError,
         load_manifest,
         validate_manifest,
@@ -369,8 +369,8 @@ def log_cmd(
 
 
 def _runtime_running(root: Path) -> bool:
-    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
-    from lib.ticket_management.runtime.server import runtime_socket_path
+    from tessera_runtime.repo import RUNTIME_DIR_NAME, repo_init
+    from tessera_runtime.runtime.server import runtime_socket_path
 
     try:
         return runtime_socket_path(root).exists()

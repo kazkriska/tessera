@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from lib.ticket_management.models import StateStatus, TicketState
-from lib.ticket_management.runtime.state import (
+from tessera_runtime.models import StateStatus, TicketState
+from tessera_runtime.runtime.state import (
     LEGAL_TRANSITIONS,
     TransitionError,
     emit_lifecycle_event,

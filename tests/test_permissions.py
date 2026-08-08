@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from lib.ticket_management.runtime.permissions import (
+from tessera_runtime.runtime.permissions import (
     PermissionSet,
     effective_permissions,
     enforce,

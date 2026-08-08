@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from lib.ticket_management.config import RuntimeConfig
-from lib.ticket_management.runtime.scheduler import Scheduler
+from tessera_runtime.config import RuntimeConfig
+from tessera_runtime.runtime.scheduler import Scheduler
 
 
 class FakeRegistry:
@@ -356,7 +356,7 @@ def test_retry_exhaustion_writes_activity_and_bus_event(tmp_path: Path) -> None:
     """CMP-06: exhausted retries append activity.jsonl + bus event."""
     import json as _json
 
-    from lib.ticket_management.runtime.bus import EventBus
+    from tessera_runtime.runtime.bus import EventBus
 
     captured: list[dict] = []
     bus = EventBus(recursion_max_depth=5)
@@ -397,7 +397,7 @@ def test_retry_exhaustion_writes_activity_and_bus_event(tmp_path: Path) -> None:
 
 def test_successful_job_writes_no_failure_record(tmp_path: Path) -> None:
     """CMP-06: success emits no failed record or event."""
-    from lib.ticket_management.runtime.bus import EventBus
+    from tessera_runtime.runtime.bus import EventBus
 
     captured: list[str] = []
     bus = EventBus(recursion_max_depth=5)
@@ -426,7 +426,7 @@ def test_ticket_lock_released_during_runner_execution(tmp_path: Path) -> None:
     guards only state-mutation critical sections (socket transitions), so
     a transition on the same ticket must proceed during a long hook.
     """
-    from lib.ticket_management.runtime.scheduler import ticket_lock
+    from tessera_runtime.runtime.scheduler import ticket_lock
 
     entered = threading.Event()
     release = threading.Event()
@@ -456,7 +456,7 @@ def test_ticket_lock_released_during_runner_execution(tmp_path: Path) -> None:
 
     def try_action_lock() -> None:
         try:
-            from lib.ticket_management.runtime.scheduler import action_lock
+            from tessera_runtime.runtime.scheduler import action_lock
 
             with action_lock(lock_dir, "T-LOCK", "on_slow"):
                 action_locked.set()

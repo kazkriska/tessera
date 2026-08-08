@@ -25,11 +25,11 @@ from pathlib import Path
 
 import pytest
 
-from lib.ticket_management.config import RuntimeConfig
-from lib.ticket_management.repo import REPO_DIR_NAME, RUNTIME_DIR_NAME, repo_init
-from lib.ticket_management.runtime.registry import Registry
-from lib.ticket_management.runtime.scheduler import reap_stale_locks
-from lib.ticket_management.runtime.server import RuntimeServer, runtime_socket_path
+from tessera_runtime.config import RuntimeConfig
+from tessera_runtime.repo import REPO_DIR_NAME, RUNTIME_DIR_NAME, repo_init
+from tessera_runtime.runtime.registry import Registry
+from tessera_runtime.runtime.scheduler import reap_stale_locks
+from tessera_runtime.runtime.server import RuntimeServer, runtime_socket_path
 
 
 # --------------------------------------------------------------------------- #
@@ -128,8 +128,8 @@ def test_held_lock_is_not_reaped(framework: Path) -> None:
 
 def test_pipeline_wires_logging_defaults(tmp_path: Path) -> None:
     """CMP-07: default boot writes logs to .ticket-runtime/logs/runtime.log."""
-    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
-    from lib.ticket_management.runtime.pipeline import Pipeline
+    from tessera_runtime.repo import RUNTIME_DIR_NAME, repo_init
+    from tessera_runtime.runtime.pipeline import Pipeline
 
     Pipeline._LOGGING_CONFIGURED = False
     try:
@@ -158,8 +158,8 @@ def test_pipeline_wires_logging_custom(tmp_path: Path) -> None:
     """CMP-07: config.yaml log_level/log_path are honored (CONTRACTS §5)."""
     import logging as _logging
 
-    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
-    from lib.ticket_management.runtime.pipeline import Pipeline
+    from tessera_runtime.repo import RUNTIME_DIR_NAME, repo_init
+    from tessera_runtime.runtime.pipeline import Pipeline
 
     framework = tmp_path / "fw"
     repo_init(framework)
@@ -178,7 +178,7 @@ def test_pipeline_wires_logging_custom(tmp_path: Path) -> None:
         try:
             log_file = runtime_dir / "custom.log"
             assert log_file.exists(), f"expected custom log at {log_file}"
-            assert _logging.getLogger("lib.ticket_management").level == _logging.DEBUG
+            assert _logging.getLogger("tessera_runtime").level == _logging.DEBUG
         finally:
             p.stop()
     finally:
@@ -187,7 +187,7 @@ def test_pipeline_wires_logging_custom(tmp_path: Path) -> None:
 
 def test_pipeline_loads_config_yaml(tmp_path: Path) -> None:
     """Pipeline boot honors `.ticket-runtime/config.yaml` (RFC-0004)."""
-    from lib.ticket_management.runtime.pipeline import Pipeline
+    from tessera_runtime.runtime.pipeline import Pipeline
 
     repo = repo_init(tmp_path / "fw")
     runtime_dir = repo / "TicketsRepository" / ".ticket-runtime"
@@ -212,8 +212,8 @@ def test_pipeline_loads_config_yaml(tmp_path: Path) -> None:
 
 def test_pipeline_honors_registry_path(tmp_path: Path) -> None:
     """CMP-08: config.yaml registry_path is honored (CONTRACTS §5)."""
-    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
-    from lib.ticket_management.runtime.pipeline import Pipeline
+    from tessera_runtime.repo import RUNTIME_DIR_NAME, repo_init
+    from tessera_runtime.runtime.pipeline import Pipeline
 
     repo = repo_init(tmp_path / "fw")
     runtime_dir = repo / "TicketsRepository" / RUNTIME_DIR_NAME
@@ -236,8 +236,8 @@ def test_pipeline_honors_registry_path(tmp_path: Path) -> None:
 
 def test_pipeline_wires_approval_cache_dir(tmp_path: Path) -> None:
     """CMP-09: config.yaml approval_cache_path is honored (CONTRACTS §5)."""
-    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
-    from lib.ticket_management.runtime.pipeline import Pipeline
+    from tessera_runtime.repo import RUNTIME_DIR_NAME, repo_init
+    from tessera_runtime.runtime.pipeline import Pipeline
 
     repo = repo_init(tmp_path / "fw")
     runtime_dir = repo / "TicketsRepository" / RUNTIME_DIR_NAME
@@ -262,7 +262,7 @@ def test_record_approval_request_persists(tmp_path: Path) -> None:
     """CMP-09: approval requests persist into the cache directory."""
     import json
 
-    from lib.ticket_management.runtime.permissions import record_approval_request
+    from tessera_runtime.runtime.permissions import record_approval_request
 
     cache_dir = tmp_path / "cache" / "approvals"
     path = record_approval_request(
@@ -278,7 +278,7 @@ def test_record_approval_request_persists(tmp_path: Path) -> None:
 
 def test_pipeline_defaults_when_no_config(tmp_path: Path) -> None:
     """Missing config.yaml yields canonical defaults (Invariant I-2)."""
-    from lib.ticket_management.runtime.pipeline import Pipeline
+    from tessera_runtime.runtime.pipeline import Pipeline
 
     repo = repo_init(tmp_path / "fw")
     p = Pipeline(root=repo)
@@ -293,7 +293,7 @@ def test_pipeline_defaults_when_no_config(tmp_path: Path) -> None:
 
 def test_pipeline_reaps_locks_at_boot(framework: Path) -> None:
     """Pipeline.start() reaps stale locks automatically."""
-    from lib.ticket_management.runtime.pipeline import Pipeline
+    from tessera_runtime.runtime.pipeline import Pipeline
 
     lock_dir = framework / REPO_DIR_NAME / RUNTIME_DIR_NAME / "locks"
     lock_dir.mkdir(parents=True, exist_ok=True)
@@ -341,8 +341,8 @@ def test_kill9_restart_recovers(framework: Path) -> None:
     # 1. Boot a real runtime process.
     code = (
         "import sys;"
-        "from lib.ticket_management.config import RuntimeConfig;"
-        "from lib.ticket_management.runtime.server import RuntimeServer;"
+        "from tessera_runtime.config import RuntimeConfig;"
+        "from tessera_runtime.runtime.server import RuntimeServer;"
         f"RuntimeServer({str(framework)!r}, RuntimeConfig(worker_concurrency=1)).start();"
         "sys.stdout.write('READY\\n'); sys.stdout.flush();"
         "import time; time.sleep(60)"
@@ -373,7 +373,7 @@ def test_kill9_restart_recovers(framework: Path) -> None:
         server = RuntimeServer(framework, RuntimeConfig(worker_concurrency=1))
         try:
             server.start()
-            from tessera import Runtime
+            from tessera_sdk import Runtime
 
             rt = Runtime.connect(repo=framework)
             tickets = rt.discover()
@@ -411,7 +411,7 @@ def test_invoke_action_over_socket(framework: Path) -> None:
     server = RuntimeServer(framework, RuntimeConfig(worker_concurrency=1))
     try:
         server.start()
-        from tessera import Runtime
+        from tessera_sdk import Runtime
 
         rt = Runtime.connect(repo=framework)
         result = rt.invoke_action("T-1", "greet")
@@ -448,7 +448,7 @@ def test_invoke_action_over_socket_daemon_mode_no_config(framework: Path) -> Non
     server = RuntimeServer(framework)
     try:
         server.start()
-        from tessera import Runtime
+        from tessera_sdk import Runtime
 
         rt = Runtime.connect(repo=framework)
         result = rt.invoke_action("T-1", "greet")
@@ -478,8 +478,8 @@ def test_invoke_action_unknown_action_over_socket(framework: Path) -> None:
     server = RuntimeServer(framework, RuntimeConfig(worker_concurrency=1))
     try:
         server.start()
-        from tessera import Runtime
-        from tessera import SDKError
+        from tessera_sdk import Runtime
+        from tessera_sdk import SDKError
 
         rt = Runtime.connect(repo=framework)
         with pytest.raises(SDKError, match="not declared"):
@@ -501,7 +501,7 @@ def test_parallel_socket_transitions_serialize(framework: Path) -> None:
     server = RuntimeServer(framework, RuntimeConfig(worker_concurrency=1))
     try:
         server.start()
-        from tessera import Runtime
+        from tessera_sdk import Runtime
 
         rt = Runtime.connect(repo=framework)
         # Drive parallel transitions from a legal starting state.
@@ -567,7 +567,7 @@ def test_parallel_same_action_serializes_over_socket(framework: Path) -> None:
     server = RuntimeServer(framework, RuntimeConfig(worker_concurrency=2))
     try:
         server.start()
-        from tessera import Runtime
+        from tessera_sdk import Runtime
 
         rt = Runtime.connect(repo=framework)
         results: list[dict] = []
@@ -626,7 +626,7 @@ def test_different_actions_run_concurrently(framework: Path) -> None:
     server = RuntimeServer(framework, RuntimeConfig(worker_concurrency=2))
     try:
         server.start()
-        from tessera import Runtime
+        from tessera_sdk import Runtime
 
         results: list[dict] = []
         errors: list[Exception] = []
@@ -663,7 +663,7 @@ def test_different_actions_run_concurrently(framework: Path) -> None:
 
 def test_action_lock_files_reaped_at_boot(framework: Path) -> None:
     """CMP-03: stale action lock files are reaped like ticket locks."""
-    from lib.ticket_management.runtime.scheduler import reap_stale_locks
+    from tessera_runtime.runtime.scheduler import reap_stale_locks
 
     lock_dir = framework / REPO_DIR_NAME / RUNTIME_DIR_NAME / "locks"
     lock_dir.mkdir(parents=True, exist_ok=True)

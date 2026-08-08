@@ -6,7 +6,7 @@ state-transition table, apply transitions to :class:`TicketState`, emit
 ``state.json`` atomically.
 
 The canonical 9-state enum and the ``TicketState`` document model live in
-:mod:`lib.ticket_management.models` (CONTRACTS.md §1). This module adds the
+:mod:`tessera_runtime.models` (CONTRACTS.md §1). This module adds the
 *behavior*: the transition table, validation, event emission, and durable
 load/save helpers.
 """
@@ -23,14 +23,14 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-from lib.ticket_management.models import (
+from tessera_runtime.models import (
     StateStatus,
     TicketState,
     append_activity,
     atomic_write_json,
     read_json,
 )
-from lib.ticket_management.runtime.bus import Event
+from tessera_runtime.runtime.bus import Event
 
 __all__ = [
     "StateStatus",

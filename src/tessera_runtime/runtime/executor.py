@@ -15,15 +15,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lib.ticket_management.config import RuntimeConfig
-from lib.ticket_management.runtime.dispatcher import (
+from tessera_runtime.config import RuntimeConfig
+from tessera_runtime.runtime.dispatcher import (
     PathJailError,
     RunnerDescriptor,
     resolve_runner,
 )
-from lib.ticket_management.plugins.bash_runner import bash_runner
-from lib.ticket_management.plugins.node_runner import node_runner
-from lib.ticket_management.plugins.python_runner import python_runner
+from tessera_runtime.plugins.bash_runner import bash_runner
+from tessera_runtime.plugins.node_runner import node_runner
+from tessera_runtime.plugins.python_runner import python_runner
 
 __all__ = [
     "ExecutionResult",
@@ -114,7 +114,7 @@ def run_hook(
 
     runner = RUNNERS.get(dispatch.runner_name)
     if runner is None:
-        from lib.ticket_management.runtime.dispatcher import UnknownRunnerError
+        from tessera_runtime.runtime.dispatcher import UnknownRunnerError
 
         raise UnknownRunnerError(f"unknown shell: {descriptor.shell!r}")
 

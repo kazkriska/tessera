@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from lib.ticket_management.config import RuntimeConfig
+from tessera_runtime.config import RuntimeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -427,7 +427,7 @@ class Scheduler:
             "reason": reason,
         }
         try:
-            from lib.ticket_management.models import append_activity
+            from tessera_runtime.models import append_activity
 
             append_activity(job.ticket_root / "activity.jsonl", record)
         except Exception:  # noqa: BLE001
@@ -438,7 +438,7 @@ class Scheduler:
             )
         if self.bus is not None:
             try:
-                from lib.ticket_management.runtime.bus import Event
+                from tessera_runtime.runtime.bus import Event
 
                 self.bus.publish(
                     Event(

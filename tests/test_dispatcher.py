@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from lib.ticket_management.config import RuntimeConfig
-from lib.ticket_management.runtime.dispatcher import (
+from tessera_runtime.config import RuntimeConfig
+from tessera_runtime.runtime.dispatcher import (
     DispatchResult,
     PathJailError,
     RunnerDescriptor,

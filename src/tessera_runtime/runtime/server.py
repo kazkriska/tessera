@@ -28,9 +28,9 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from lib.ticket_management.config import RuntimeConfig
-from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
-from lib.ticket_management.runtime.pipeline import Pipeline
+from tessera_runtime.config import RuntimeConfig
+from tessera_runtime.repo import RUNTIME_DIR_NAME, repo_init
+from tessera_runtime.runtime.pipeline import Pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +183,7 @@ class RuntimeServer:
                 raise RuntimeError("runtime not initialized")
             # Registry connections are thread-bound (sqlite3); the pipeline's
             # registry lives in the main thread, so open a fresh one here.
-            from lib.ticket_management.runtime.registry import Registry
+            from tessera_runtime.runtime.registry import Registry
 
             registry = Registry(str(self.root))
             try:
@@ -200,8 +200,8 @@ class RuntimeServer:
         if method == "transition":
             if self.pipeline is None:
                 raise RuntimeError("runtime not initialized")
-            from lib.ticket_management.runtime.scheduler import ticket_lock
-            from lib.ticket_management.runtime.state import TransitionError, transition
+            from tessera_runtime.runtime.scheduler import ticket_lock
+            from tessera_runtime.runtime.state import TransitionError, transition
 
             ticket_id = params.get("ticket_id")
             status = params.get("status")
@@ -231,9 +231,9 @@ class RuntimeServer:
         if method == "invoke_action":
             if self.pipeline is None:
                 raise RuntimeError("runtime not initialized")
-            from lib.ticket_management.runtime.dispatcher import RunnerDescriptor
-            from lib.ticket_management.runtime.executor import run_hook
-            from lib.ticket_management.runtime.manifest import (
+            from tessera_runtime.runtime.dispatcher import RunnerDescriptor
+            from tessera_runtime.runtime.executor import run_hook
+            from tessera_runtime.runtime.manifest import (
                 ManifestValidationError,
                 load_manifest,
             )
@@ -262,7 +262,7 @@ class RuntimeServer:
             )
             # RFC-0006:19: the same action must not run twice concurrently;
             # different actions on the same ticket stay concurrent.
-            from lib.ticket_management.runtime.scheduler import action_lock
+            from tessera_runtime.runtime.scheduler import action_lock
 
             lock_dir = self.pipeline.lock_dir or (
                 self.root / "TicketsRepository" / ".ticket-runtime" / "locks"
@@ -287,7 +287,7 @@ class RuntimeServer:
         if method == "emit":
             if self.pipeline is None or self.pipeline.bus is None:
                 raise RuntimeError("runtime not initialized")
-            from lib.ticket_management.runtime.bus import Event
+            from tessera_runtime.runtime.bus import Event
 
             self.pipeline.bus.publish(
                 Event(
@@ -305,7 +305,7 @@ class RuntimeServer:
 
 def _load_state(path: Path) -> str:
     """Return the current status string of a ticket state file."""
-    from lib.ticket_management.models import TicketState
+    from tessera_runtime.models import TicketState
 
     if not path.is_file():
         return "created"

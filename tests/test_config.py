@@ -7,7 +7,7 @@ import logging
 import pytest
 import yaml
 
-from lib.ticket_management.config import (
+from tessera_runtime.config import (
     DEFAULT_PRIORITY_BANDS,
     RuntimeConfig,
     config_example_yaml,
@@ -96,7 +96,7 @@ def test_malformed_priority_bands_falls_back_with_warning(tmp_path, caplog, band
     path = tmp_path / "config.yaml"
     path.write_text(bands_yaml, encoding="utf-8")
 
-    with caplog.at_level(logging.WARNING, logger="lib.ticket_management.config"):
+    with caplog.at_level(logging.WARNING, logger="tessera_runtime.config"):
         cfg = load_config(str(path))
 
     assert cfg.priority_bands == DEFAULT_PRIORITY_BANDS
@@ -107,7 +107,7 @@ def test_unknown_key_ignored_with_warning(tmp_path, caplog):
     path = tmp_path / "config.yaml"
     path.write_text("worker_concurrency: 2\nnope: 1\n", encoding="utf-8")
 
-    with caplog.at_level(logging.WARNING, logger="lib.ticket_management.config"):
+    with caplog.at_level(logging.WARNING, logger="tessera_runtime.config"):
         cfg = load_config(str(path))
 
     assert cfg.worker_concurrency == 2
@@ -123,7 +123,7 @@ def test_invalid_scalar_and_bad_yaml_fall_back(tmp_path, caplog):
     empty = tmp_path / "c.yaml"
     empty.write_text("", encoding="utf-8")
 
-    with caplog.at_level(logging.WARNING, logger="lib.ticket_management.config"):
+    with caplog.at_level(logging.WARNING, logger="tessera_runtime.config"):
         assert load_config(str(bad_scalar)).worker_concurrency == 4
         assert load_config(str(bad_yaml)) == RuntimeConfig()
         assert load_config(str(empty)) == RuntimeConfig()

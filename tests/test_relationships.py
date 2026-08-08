@@ -2,7 +2,7 @@
 from pathlib import Path
 import json
 
-from lib.ticket_management.relationships import (
+from tessera_runtime.relationships import (
     ALL_RELATIONSHIP_TYPES,
     SINGLE_VALUE_RELATIONSHIPS,
     build_relationship_index,
