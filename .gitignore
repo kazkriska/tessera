@@ -9,6 +9,9 @@ Skills/
 # Derived worktrees
 .worktrees/
 
+# Agent planning state (Hermes plans) — not project code
+.hermes/
+
 # Python
 .venv/
 __pycache__/
