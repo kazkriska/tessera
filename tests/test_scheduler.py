@@ -231,6 +231,70 @@ def test_default_retry_zero_single_attempt_no_delay(tmp_path: Path):
     assert elapsed < 0.5  # a 1.0s backoff wait would blow this bound
 
 
+def test_same_workspace_tickets_serialize(tmp_path: Path) -> None:
+    """CMP-04 (CONTRACTS §6): tickets sharing a workspace share one queue."""
+    import json as _json
+
+    active = {"n": 0}
+    max_active = {"n": 0}
+    lock = threading.Lock()
+
+    def runner(ticket_id, descriptor, ticket_root, config, payload):
+        with lock:
+            active["n"] += 1
+            max_active["n"] = max(max_active["n"], active["n"])
+        time.sleep(0.15)
+        with lock:
+            active["n"] -= 1
+        return {"ok": True}
+
+    sched = Scheduler(config=RuntimeConfig(worker_concurrency=4), runner=runner)
+
+    # Two tickets declare the SAME workspace => serialized (one queue).
+    for tid in ("T-W1", "T-W2"):
+        root = _make_ticket(tmp_path, tid)
+        meta = _json.loads((root / "metadata.json").read_text())
+        meta["workspace"] = "/srv/shared"
+        (root / "metadata.json").write_text(_json.dumps(meta))
+        sched.enqueue(tid, FakeDescriptor("x.sh"), root)
+
+    sched.shutdown(wait=True)
+
+    # One queue => max 1 in flight, never 2.
+    assert max_active["n"] == 1
+
+
+def test_different_workspace_tickets_run_in_parallel(tmp_path: Path) -> None:
+    """CMP-04: tickets in different workspaces keep per-workspace queues."""
+    import json as _json
+
+    active = {"n": 0}
+    max_active = {"n": 0}
+    lock = threading.Lock()
+
+    def runner(ticket_id, descriptor, ticket_root, config, payload):
+        with lock:
+            active["n"] += 1
+            max_active["n"] = max(max_active["n"], active["n"])
+        time.sleep(0.15)
+        with lock:
+            active["n"] -= 1
+        return {"ok": True}
+
+    sched = Scheduler(config=RuntimeConfig(worker_concurrency=4), runner=runner)
+
+    for tid, ws in (("T-A1", "/srv/a"), ("T-A2", "/srv/b")):
+        root = _make_ticket(tmp_path, tid)
+        meta = _json.loads((root / "metadata.json").read_text())
+        meta["workspace"] = ws
+        (root / "metadata.json").write_text(_json.dumps(meta))
+        sched.enqueue(tid, FakeDescriptor("x.sh"), root)
+
+    sched.shutdown(wait=True)
+
+    assert max_active["n"] >= 2  # two queues overlapped
+
+
 def test_shutdown_interrupts_retry_backoff(tmp_path: Path):
     """shutdown(wait=True) must not be blocked for the full backoff window."""
     attempts = {"n": 0}
