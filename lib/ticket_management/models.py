@@ -308,9 +308,14 @@ class TicketMetadata:
     def from_dict(cls, data: dict) -> "TicketMetadata":
         if not isinstance(data, dict):
             raise ValueError("metadata must be a JSON object")
-        for required in ("id", "title", "owner"):
+        # CONTRACTS.md §2: the canonical schema requires all six fields on
+        # read. Hand-written tickets must include them; defaults exist only
+        # for the dataclass constructor, not for file reads (CMP-12).
+        for required in ("id", "title", "kind", "type", "created_at", "owner"):
             if required not in data:
-                raise ValueError(f"metadata.json missing required field: {required}")
+                raise ValueError(
+                    f"metadata.json missing required field: {required}"
+                )
         return cls(
             id=data["id"],
             title=data["title"],
