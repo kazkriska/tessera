@@ -10,7 +10,7 @@
 # is NOT payload and is intentionally absent here.
 # files: 35
 9f37bdb9735ed7f3251b68934859fbb0769c0d5aa4527a47abc2bbbac4ee2cab  LICENSE
-c87617be0553ccfcc64d627662c14d3b4868c265d6d43197e71e9cdba9c05525  README.md
+494b78d5f852b065c4c3b25e8afbdf804aa1f71e2c220cac27a03ab9fd51d406  README.md
 0616eaaf9a88e7717dacdaf067ed2d18a58ace0179c3ca0f283b6b1465956c24  e2e/smoke_test.py
 cdab60837144a5477f07766e1c47b704c9899aef5039cdcc4f64a8224f0b04a0  install-modules/00-precheck.sh
 9e930bccbb4997ff3b7b0ee67d2031c519a8ce9e531dcf875f439ad67a4f0415  install-modules/01-perms.sh
