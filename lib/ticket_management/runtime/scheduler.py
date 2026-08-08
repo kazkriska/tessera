@@ -220,12 +220,14 @@ class Scheduler:
                         if existing.run == job.run:
                             queue[i] = job
                             break
+                    self._sort_queue(queue)
                 logger.debug("scheduler: debounced duplicate job %s", key)
                 return
 
             self._pending[key] = job
             self._last_seen[key] = now
             self._queues.setdefault(queue_key, []).append(job)
+            self._sort_queue(self._queues[queue_key])
 
         self._ensure_queue_worker(queue_key)
 
@@ -246,6 +248,16 @@ class Scheduler:
     # ------------------------------------------------------------------ #
     # Internal
     # ------------------------------------------------------------------ #
+    def _sort_queue(self, queue: list[ScheduledJob]) -> None:
+        """Stable-sort a queue by priority (CONTRACTS §5 / FRAME R.A.8).
+
+        Lower band number = higher priority (0 emergency … 3 background).
+        ``sorted`` is stable, so jobs in the same band keep enqueue order
+        (FIFO within a band). The queue is drained by popping index 0.
+        """
+        if len(queue) > 1:
+            queue.sort(key=lambda job: job.priority)
+
     def _queue_key(self, job: ScheduledJob) -> str:
         """Resolve the queue key per CONTRACTS.md §6.
 
