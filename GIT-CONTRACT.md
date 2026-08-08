@@ -3,7 +3,7 @@
 **Status:** Ratified (CTO sign-off, 2026-08-07)
 **Binding on:** CTO (Kevin), Igor (Senior Developer), Josh (Senior QA Analyst)
 **Supersedes:** any ad-hoc git habit. Deviation requires explicit CTO waiver.
-**Companion docs:** `CONTRACTS.md` (build/spec contract), `tessera-docs/` (external source of truth, vendored).
+**Companion docs:** `CONTRACTS.md` (build/spec contract), `formal-specifications/` (external source of truth, vendored).
 
 ---
 
@@ -15,7 +15,7 @@ This contract governs **all git operations** for the Tessera v1 framework projec
 - Every branch, worktree, commit, merge, and tag touching that repository.
 - The behavior of Igor (build) and Josh (QA) when they execute kanban tasks against this repo.
 
-It does **not** govern `tessera-docs/` — that is a separate upstream clone (remote `origin` =
+It does **not** govern `formal-specifications/` — that is a separate upstream clone (remote `origin` =
 `github.com/kazkriska/tessera-docs`) used purely as a **vendored reference**. It is git-ignored
 here and never committed into the framework repo.
 
@@ -26,7 +26,7 @@ here and never committed into the framework repo.
 ```
 <workspace root>  (= framework repo root, git-initialized)
 ├── .git/                      # the framework repo
-├── .gitignore                 # excludes tessera-docs/, .ticket-runtime/, .worktrees/, .venv, .env
+├── .gitignore                 # excludes formal-specifications/, .ticket-runtime/, .worktrees/, .venv, .env
 ├── CONTRACTS.md               # build/spec contract (tracked)
 ├── GIT-CONTRACT.md            # this file (tracked)
 ├── pyproject.toml             # uv-managed, requires-python >=3.12
@@ -35,13 +35,13 @@ here and never committed into the framework repo.
 ├── tests/                     # test suite (tracked)
 ├── Tickets/                   # runtime data — git-ignored when present
 ├── Skills/                    # future resource repo — git-ignored until used
-├── tessera-docs/              # vendored reference — git-ignored (separate .git)
+├── formal-specifications/              # vendored reference — git-ignored (separate .git)
 ├── .ticket-runtime/           # disposable runtime state — git-ignored
 └── .worktrees/                # per-task git worktrees — git-ignored (derived)
 ```
 
 - **Single source of truth for code = `main` of this repo.** Kanban board state is tracking, not source.
-- **`tessera-docs/` is never edited or committed here.** Spec changes go upstream; we re-read.
+- **`formal-specifications/` is never edited or committed here.** Spec changes go upstream; we re-read.
 - **`.ticket-runtime/`, `Tickets/`, `.worktrees/`, `.venv/`, `.env`, `__pycache__/`, `*.egg-info/`**
   are always git-ignored (per Invariant I-2 / I-5 — runtime state is disposable).
 
@@ -93,7 +93,7 @@ cd .worktrees/<taskkey>
 - **Singleton rule:** a task key maps to exactly one worktree + one branch. If the worktree already
   exists (e.g. resuming), the agent reuses it — never creates a second one for the same task.
 - The agent operates **only inside** its worktree. It never touches `main`, other tasks' worktrees,
-  or `tessera-docs/`.
+  or `formal-specifications/`.
 
 ### 4.2 During work
 - Commit early, commit often (see §5). Each green milestone is a commit.
@@ -162,7 +162,7 @@ If a change spans scopes, pick the dominant one; do not use `*`.
 
 ### 5.6 Forbidden
 - No `--no-verify` to skip hooks.
-- No committing `.env`, secrets, `.ticket-runtime/`, `Tickets/` data, or `tessera-docs/`.
+- No committing `.env`, secrets, `.ticket-runtime/`, `Tickets/` data, or `formal-specifications/`.
 - No `wip` / `temp` / empty subjects. Squash or amend local junk before merge — never merge a `wip` commit.
 - No merge commits inside a feature branch (rebase onto latest `main` instead; see §6.1).
 

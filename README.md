@@ -74,9 +74,9 @@ uv run tessera log HQ_BR-010
 ## Contracts
 
 - [CONTRACTS.md](CONTRACTS.md) — build/spec contract; resolves ambiguities in the
-  vendored `tessera-docs/` design spec. **It wins over the source docs.**
+  vendored `formal-specifications/` design spec. **It wins over the source docs.**
 - [GIT-CONTRACT.md](GIT-CONTRACT.md) — branch / worktree / commit standard.
-- `tessera-docs/` is a vendored upstream clone (read-only reference, git-ignored).
+- `formal-specifications/` is a vendored upstream clone (read-only reference, git-ignored).
 
 ## Development
 
