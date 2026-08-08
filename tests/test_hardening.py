@@ -466,13 +466,17 @@ def test_different_actions_run_concurrently(framework: Path) -> None:
         server.start()
         from tessera import Runtime
 
-        rt = Runtime.connect(repo=framework)
         results: list[dict] = []
         errors: list[Exception] = []
 
         def _go(action: str) -> None:
+            # Each thread opens its OWN client connection: the server is
+            # threaded per-connection, but a single SDK client serializes
+            # requests on its socket, which would mask server concurrency.
             try:
+                rt = Runtime.connect(repo=framework)
                 results.append(rt.invoke_action("T-1", action))
+                rt.close()
             except Exception as exc:  # noqa: BLE001
                 errors.append(exc)
 
@@ -486,7 +490,6 @@ def test_different_actions_run_concurrently(framework: Path) -> None:
         for t in threads:
             t.join(timeout=15)
         elapsed = _time.monotonic() - start
-        rt.close()
 
         assert not errors, f"actions failed: {errors}"
         assert len(results) == 2
