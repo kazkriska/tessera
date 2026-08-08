@@ -1,7 +1,8 @@
 # Python SDK
 
-`import tessera` — the programmatic client for the Tessera runtime
-(Part XI / RFC-0010). One facade, two modes:
+`import tessera_sdk` — the programmatic client for the Tessera runtime
+(Part XI / RFC-0010). The package ships as `src/tessera_sdk` and is installed
+alongside the engine package `tessera_runtime`. One facade, two modes:
 
 - **Direct** (`Runtime.direct`) — operate straight on the filesystem. No
   daemon needed; good for scripts, offline edits, and tests.
@@ -11,7 +12,7 @@
 ## Quick example
 
 ```python
-from tessera import Runtime
+from tessera_sdk import Runtime
 
 # Direct mode — no daemon required
 rt = Runtime.direct(repo=".")          # or omit repo to auto-detect
@@ -83,7 +84,7 @@ the same jail/env logic as the daemon.
 
 ```python
 import threading
-from tessera import Runtime
+from tessera_sdk import Runtime
 
 rt = Runtime.direct(repo=".")
 events = rt.subscribe(["ticket.completed"])

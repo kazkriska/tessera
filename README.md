@@ -21,15 +21,20 @@ The runtime is a pipeline: **watcher → event bus → scheduler → executor**.
 
 | Stage | Module | Job |
 |-------|--------|-----|
-| Watcher | `lib/ticket_management/runtime/watcher.py` | inotify observer; debounces raw file events into domain triggers (`metadata.updated`, `fs.changed`, or triggers declared in `MANIFEST.yaml` `watch:` rules) |
-| Event bus | `runtime/bus.py` | pub/sub event dispatch with recursion guard |
-| Scheduler | `runtime/scheduler.py` | per-workspace queues, priority bands, action-level locks, retry with exponential backoff |
-| Executor | `runtime/executor.py` | resolves permissions/env, runs hooks in isolated subprocesses with a path jail |
+| Watcher | `tessera_runtime/runtime/watcher.py` | inotify observer; debounces raw file events into domain triggers (`metadata.updated`, `fs.changed`, or triggers declared in `MANIFEST.yaml` `watch:` rules) |
+| Event bus | `tessera_runtime/runtime/bus.py` | pub/sub event dispatch with recursion guard |
+| Scheduler | `tessera_runtime/runtime/scheduler.py` | per-workspace queues, priority bands, action-level locks, retry with exponential backoff |
+| Executor | `tessera_runtime/runtime/executor.py` | resolves permissions/env, runs hooks in isolated subprocesses with a path jail |
 
 Everything is configured from one optional file: `.ticket-runtime/config.yaml`
 (all keys optional — delete the file to revert to defaults).
 
 ## Quick start
+
+**End users:** install with the one-line bootstrap — see [INSTALL.md](INSTALL.md).
+It installs to the prefix `tessera/` under your home (`~/.local/share/tessera`)
+and puts `tessera` and `ticket` on your `PATH`. The steps below are the
+from-source (contributor) path.
 
 ```bash
 # 1. Install (Python >= 3.12 required)
@@ -57,12 +62,13 @@ uv run tessera log HQ_BR-010
 ## Two ways to drive the system
 
 1. **CLI** (`tessera …`) — wraps the SDK; see [docs/CLI.md](docs/CLI.md).
-2. **Python SDK** (`import tessera`) — `Runtime.direct()` (filesystem, no daemon)
+2. **Python SDK** (`import tessera_sdk`) — `Runtime.direct()` (filesystem, no daemon)
    or `Runtime.connect()` (attach to a running daemon over `runtime.sock`);
    see [docs/SDK.md](docs/SDK.md).
 
 ## Documentation (end-user)
 
+- [Install](INSTALL.md) — one-line `curl … | bash` install (Linux, user-scope)
 - [Getting Started](docs/GETTING_STARTED.md) — first repo, first ticket, first action
 - [Ticket Authoring Guide](docs/TICKETS.md) — metadata.json, MANIFEST.yaml, hooks, actions, permissions, watch rules
 - [Lifecycle & State Machine](docs/LIFECYCLE.md) — the 9-state model and legal transitions
@@ -89,16 +95,21 @@ uv run pytest          # full suite (currently 160 tests)
 ## Repository layout
 
 ```
-lib/ticket_management/   the runtime engine (importable as ticket_management)
-  runtime/               watcher, bus, scheduler, executor, server, registry, ...
-  cli.py                 Typer CLI (console scripts: tessera, ticket)
-tessera/                 SDK client package (Runtime facade; direct + socket modes)
+src/
+  tessera_runtime/       the runtime engine (importable as tessera_runtime)
+    runtime/             watcher, bus, scheduler, executor, server, registry, ...
+    cli.py               Typer CLI (console scripts: tessera, ticket)
+  tessera_sdk/           SDK client package (Runtime facade; direct + socket modes)
 TicketsRepository/       canonical ticket store (git-ignored; created at boot)
   .ticket-runtime/       disposable runtime state (config.yaml, registry.db,
                          locks/, logs/, runtime.sock, cache/)
 tests/                   pytest suite
 docs/                    end-user documentation
 ```
+
+When installed (rather than run from a checkout), the same two packages live
+under the install prefix `tessera/` in the user's home —
+`~/.local/share/tessera` — per [RFC-0013](INSTALL.md).
 
 ## Note on runtime directories
 
