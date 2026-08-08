@@ -99,6 +99,16 @@ class Pipeline:
             lock_dir = runtime_dir / lock_dir
         lock_dir = lock_dir.resolve()
 
+        # CONTRACTS §5: honor log_level / log_path. Relative log_path is
+        # resolved against the canonical runtime dir, same as lock_dir.
+        log_path: str | None = None
+        if self.config.log_path:
+            resolved_log = Path(self.config.log_path)
+            if not resolved_log.is_absolute():
+                resolved_log = runtime_dir / resolved_log
+            log_path = str(resolved_log.resolve())
+        self._configure_logging(self.config, log_path)
+
         # Reap stale ticket locks left by a crashed runtime (RFC-0006).
         from lib.ticket_management.runtime.scheduler import reap_stale_locks
 
@@ -202,6 +212,47 @@ class Pipeline:
             return None
         candidate = self.repo / f"{ticket_id}.ticket"
         return candidate if candidate.is_dir() else None
+
+    # ------------------------------------------------------------------ #
+    # Logging wiring (CONTRACTS.md §5)
+    # ------------------------------------------------------------------ #
+    _LOGGING_CONFIGURED = False
+
+    @classmethod
+    def _configure_logging(cls, config: RuntimeConfig, log_path: str | None = None) -> None:
+        """Honor ``log_level`` / ``log_path`` without stacking handlers.
+
+        Idempotent for the same target (repeated boots keep one handler);
+        a *different* target replaces the old handler, so an in-process
+        reconfiguration (tests, re-boot) takes effect. ``log_path`` is the
+        runtime-dir-resolved absolute path, or None for stderr.
+        """
+        level = getattr(logging, str(config.log_level).upper(), logging.INFO)
+
+        root = logging.getLogger("lib.ticket_management")
+        # Remove handlers whose target differs from the requested one;
+        # keep a matching handler so repeated boots don't stack.
+        for handler in list(root.handlers):
+            if getattr(handler, "_tessera_log_path", object()) != log_path:
+                root.removeHandler(handler)
+                handler.close()
+        if not root.handlers:
+            handler: logging.Handler
+            if log_path:
+                Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+                handler = logging.FileHandler(log_path)
+            else:
+                handler = logging.StreamHandler()
+            handler.setFormatter(
+                logging.Formatter(
+                    "%(asctime)s %(levelname)s %(name)s: %(message)s"
+                )
+            )
+            handler._tessera_log_path = log_path  # type: ignore[attr-defined]
+            root.addHandler(handler)
+        root.setLevel(level)
+        root.propagate = False
+        cls._LOGGING_CONFIGURED = True
 
     # ------------------------------------------------------------------ #
     # Teardown

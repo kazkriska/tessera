@@ -126,6 +126,65 @@ def test_held_lock_is_not_reaped(framework: Path) -> None:
         os.close(fd)
 
 
+def test_pipeline_wires_logging_defaults(tmp_path: Path) -> None:
+    """CMP-07: default boot writes logs to .ticket-runtime/logs/runtime.log."""
+    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
+    from lib.ticket_management.runtime.pipeline import Pipeline
+
+    Pipeline._LOGGING_CONFIGURED = False
+    try:
+        framework = tmp_path / "fw"
+        repo_init(framework)
+        p = Pipeline(root=framework)
+        p.start()
+        try:
+            log_file = (
+                framework
+                / REPO_DIR_NAME
+                / RUNTIME_DIR_NAME
+                / "logs"
+                / "runtime.log"
+            )
+            assert log_file.exists(), f"expected log file at {log_file}"
+            assert log_file.stat().st_size >= 0
+        finally:
+            p.stop()
+    finally:
+        # Restore the global flag for later tests in this process.
+        Pipeline._LOGGING_CONFIGURED = False
+
+
+def test_pipeline_wires_logging_custom(tmp_path: Path) -> None:
+    """CMP-07: config.yaml log_level/log_path are honored (CONTRACTS §5)."""
+    import logging as _logging
+
+    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
+    from lib.ticket_management.runtime.pipeline import Pipeline
+
+    framework = tmp_path / "fw"
+    repo_init(framework)
+    runtime_dir = framework / REPO_DIR_NAME / RUNTIME_DIR_NAME
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    (runtime_dir / "config.yaml").write_text(
+        "log_level: DEBUG\n"
+        "log_path: custom.log\n",
+        encoding="utf-8",
+    )
+
+    Pipeline._LOGGING_CONFIGURED = False
+    try:
+        p = Pipeline(root=framework)
+        p.start()
+        try:
+            log_file = runtime_dir / "custom.log"
+            assert log_file.exists(), f"expected custom log at {log_file}"
+            assert _logging.getLogger("lib.ticket_management").level == _logging.DEBUG
+        finally:
+            p.stop()
+    finally:
+        Pipeline._LOGGING_CONFIGURED = False
+
+
 def test_pipeline_loads_config_yaml(tmp_path: Path) -> None:
     """Pipeline boot honors `.ticket-runtime/config.yaml` (RFC-0004)."""
     from lib.ticket_management.runtime.pipeline import Pipeline
