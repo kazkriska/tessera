@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import threading
 import time
+import types
 from pathlib import Path
+
+import pytest
 
 from lib.ticket_management.config import RuntimeConfig
 from lib.ticket_management.runtime.scheduler import Scheduler
@@ -67,7 +70,10 @@ def test_retry_on_failure(tmp_path: Path):
             raise RuntimeError("flaky")
         return {"ok": True}
 
-    sched = Scheduler(config=RuntimeConfig(worker_concurrency=1), runner=runner)
+    sched = Scheduler(
+        config=RuntimeConfig(worker_concurrency=1, retry_backoff_seconds=0.0),
+        runner=runner,
+    )
     root = _make_ticket(tmp_path, "T-002")
     sched.enqueue("T-002", FakeDescriptor("retry.sh", retry=3), root)
     sched.shutdown(wait=True)
@@ -153,3 +159,102 @@ def test_no_runner_reports_dispatch(tmp_path: Path):
     sched.shutdown(wait=True)
     # No exception raised; the pending map is cleared.
     assert sched._pending == {}
+
+
+def test_backoff_delay_policy_is_exponential():
+    """RFC-0006 Part VIII §4.3 backoff: base * 2^(attempt-1), floor from config."""
+    base = 0.1
+    assert Scheduler._backoff_delay(1, RuntimeConfig(retry_backoff_seconds=base)) == pytest.approx(0.1)
+    assert Scheduler._backoff_delay(2, RuntimeConfig(retry_backoff_seconds=base)) == pytest.approx(0.2)
+    assert Scheduler._backoff_delay(3, RuntimeConfig(retry_backoff_seconds=base)) == pytest.approx(0.4)
+    assert Scheduler._backoff_delay(4, RuntimeConfig(retry_backoff_seconds=base)) == pytest.approx(0.8)
+    # A zero base means no delay at all (used to keep fast tests fast).
+    assert Scheduler._backoff_delay(3, RuntimeConfig(retry_backoff_seconds=0.0)) == 0.0
+    # Negative config values are clamped to zero.
+    assert Scheduler._backoff_delay(2, RuntimeConfig(retry_backoff_seconds=-1.0)) == 0.0
+
+
+def test_retry_backoff_delays_between_attempts(tmp_path: Path):
+    """RFC-0006 Part VIII §4.3: retries are spaced by backoff and stop on success."""
+    starts: list[float] = []
+    lock = threading.Lock()
+
+    def runner(ticket_id, descriptor, ticket_root, config, payload):
+        with lock:
+            starts.append(time.monotonic())
+            n = len(starts)
+        if n < 3:
+            raise RuntimeError("flaky")
+        return {"ok": True}
+
+    sched = Scheduler(
+        config=RuntimeConfig(worker_concurrency=1, retry_backoff_seconds=0.1),
+        runner=runner,
+    )
+    root = _make_ticket(tmp_path, "T-002")
+    sched.enqueue("T-002", FakeDescriptor("retry.sh", retry=2), root)
+    # Let the job finish its retry cycle before shutting down; otherwise
+    # shutdown's interruptible-wait semantics abort it mid-backoff.
+    deadline = time.monotonic() + 5.0
+    while len(starts) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    sched.shutdown(wait=True)
+
+    assert len(starts) == 3  # 2 failures then success; no 4th attempt
+    gap1 = starts[1] - starts[0]
+    gap2 = starts[2] - starts[1]
+    # Each gap is a floor: wait(backoff) cannot return early.
+    assert gap1 >= 0.1 - 0.02
+    assert gap2 >= 0.2 - 0.02  # exponential: 0.1 then 0.2
+    assert gap2 > gap1  # base-2 growth, not constant delay
+
+
+def test_default_retry_zero_single_attempt_no_delay(tmp_path: Path):
+    """default_retry: 0 (the default) => exactly one attempt, no backoff wait."""
+    attempts = {"n": 0}
+
+    def runner(ticket_id, descriptor, ticket_root, config, payload):
+        attempts["n"] += 1
+        raise RuntimeError("always fails")
+
+    # Descriptor without a `retry` attribute => falls back to config.default_retry.
+    desc = types.SimpleNamespace(run="fail.sh")
+
+    start = time.monotonic()
+    sched = Scheduler(config=RuntimeConfig(worker_concurrency=1), runner=runner)
+    root = _make_ticket(tmp_path, "T-021")
+    sched.enqueue("T-021", desc, root)
+    sched.shutdown(wait=True)
+    elapsed = time.monotonic() - start
+
+    assert attempts["n"] == 1  # no retries
+    assert elapsed < 0.5  # a 1.0s backoff wait would blow this bound
+
+
+def test_shutdown_interrupts_retry_backoff(tmp_path: Path):
+    """shutdown(wait=True) must not be blocked for the full backoff window."""
+    attempts = {"n": 0}
+
+    def runner(ticket_id, descriptor, ticket_root, config, payload):
+        attempts["n"] += 1
+        raise RuntimeError("always fails")
+
+    sched = Scheduler(
+        config=RuntimeConfig(worker_concurrency=1, retry_backoff_seconds=30.0),
+        runner=runner,
+    )
+    root = _make_ticket(tmp_path, "T-030")
+    sched.enqueue("T-030", FakeDescriptor("fail.sh", retry=10), root)
+
+    # Let the first attempt fail so the worker sits inside the backoff wait.
+    deadline = time.monotonic() + 2.0
+    while attempts["n"] < 1 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert attempts["n"] == 1
+
+    start = time.monotonic()
+    sched.shutdown(wait=True)
+    elapsed = time.monotonic() - start
+
+    assert attempts["n"] == 1  # aborted during backoff; no further attempts
+    assert elapsed < 5.0  # far below the 30s backoff => wait was interrupted

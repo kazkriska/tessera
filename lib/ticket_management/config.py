@@ -52,6 +52,7 @@ class RuntimeConfig:
     recursion_max_depth: int = 10
     default_timeout: int = 300
     default_retry: int = 0
+    retry_backoff_seconds: float = 1.0
     approval_cache_path: str = "cache/approvals"
     log_level: str = "INFO"
     log_path: str = "logs/runtime.log"
@@ -99,6 +100,7 @@ _SCALAR_COERCERS: dict[str, Any] = {
     "recursion_max_depth": int,
     "default_timeout": int,
     "default_retry": int,
+    "retry_backoff_seconds": float,
     "approval_cache_path": str,
     "log_level": str,
     "log_path": str,
@@ -191,6 +193,7 @@ priority_bands:              # ordering key; lower number = higher priority
 recursion_max_depth: 10      # event re-emission depth guard
 default_timeout: 300         # seconds, used when a descriptor omits `timeout`
 default_retry: 0             # retries, used when a descriptor omits `retry`
+retry_backoff_seconds: 1.0   # base delay (s) before each retry; exponential 2^(n-1)
 
 approval_cache_path: cache/approvals
 log_level: INFO              # DEBUG | INFO | WARNING | ERROR | CRITICAL
