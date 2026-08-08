@@ -16,7 +16,7 @@ This contract governs **all git operations** for the Tessera v1 framework projec
 - The behavior of Igor (build) and Josh (QA) when they execute kanban tasks against this repo.
 
 It does **not** govern `formal-specifications/` — that is a separate upstream clone (remote `origin` =
-`github.com/kazkriska/tessera-docs`) used purely as a **vendored reference**. It is git-ignored
+`github.com/kazkriska/formal-specifications`) used purely as a **vendored reference**. It is git-ignored
 here and never committed into the framework repo.
 
 ---
