@@ -21,20 +21,15 @@ The runtime is a pipeline: **watcher → event bus → scheduler → executor**.
 
 | Stage | Module | Job |
 |-------|--------|-----|
-| Watcher | `tessera_runtime/runtime/watcher.py` | inotify observer; debounces raw file events into domain triggers (`metadata.updated`, `fs.changed`, or triggers declared in `MANIFEST.yaml` `watch:` rules) |
-| Event bus | `tessera_runtime/runtime/bus.py` | pub/sub event dispatch with recursion guard |
-| Scheduler | `tessera_runtime/runtime/scheduler.py` | per-workspace queues, priority bands, action-level locks, retry with exponential backoff |
-| Executor | `tessera_runtime/runtime/executor.py` | resolves permissions/env, runs hooks in isolated subprocesses with a path jail |
+| Watcher | `src/tessera_runtime/runtime/watcher.py` | inotify observer; debounces raw file events into domain triggers (`metadata.updated`, `fs.changed`, or triggers declared in `MANIFEST.yaml` `watch:` rules) |
+| Event bus | `runtime/bus.py` | pub/sub event dispatch with recursion guard |
+| Scheduler | `runtime/scheduler.py` | per-workspace queues, priority bands, action-level locks, retry with exponential backoff |
+| Executor | `runtime/executor.py` | resolves permissions/env, runs hooks in isolated subprocesses with a path jail |
 
 Everything is configured from one optional file: `.ticket-runtime/config.yaml`
 (all keys optional — delete the file to revert to defaults).
 
 ## Quick start
-
-**End users:** install with the one-line bootstrap — see [INSTALL.md](INSTALL.md).
-It installs to the prefix `tessera/` under your home (`~/.local/share/tessera`)
-and puts `tessera` and `ticket` on your `PATH`. The steps below are the
-from-source (contributor) path.
 
 ```bash
 # 1. Install (Python >= 3.12 required)
@@ -68,7 +63,6 @@ uv run tessera log HQ_BR-010
 
 ## Documentation (end-user)
 
-- [Install](INSTALL.md) — one-line `curl … | bash` install (Linux, user-scope)
 - [Getting Started](docs/GETTING_STARTED.md) — first repo, first ticket, first action
 - [Ticket Authoring Guide](docs/TICKETS.md) — metadata.json, MANIFEST.yaml, hooks, actions, permissions, watch rules
 - [Lifecycle & State Machine](docs/LIFECYCLE.md) — the 9-state model and legal transitions
@@ -107,9 +101,19 @@ tests/                   pytest suite
 docs/                    end-user documentation
 ```
 
-When installed (rather than run from a checkout), the same two packages live
-under the install prefix `tessera/` in the user's home —
-`~/.local/share/tessera` — per [RFC-0013](INSTALL.md).
+## Distribution & installation
+
+Tessera v1 is distributed as a self-contained source tarball (not via PyPI).
+The user install guide lives in [INSTALL.md](INSTALL.md); the authoritative
+spec is [RFC-0013](https://github.com/<your-org>/tessera-v1/blob/main/formal-specifications/rfcs/rfc-0013-distribution.md).
+In short:
+
+```bash
+curl -fsSL https://<your-repo>/dist/install.sh | bash
+```
+
+This installs to the user-scoped prefix `~/.local/share/tessera/` with
+`~/.local/bin/tessera` and `~/.local/bin/ticket` on `PATH`. Runs on Linux only.
 
 ## Note on runtime directories
 

@@ -1,107 +1,172 @@
 # Installing Tessera v1
 
-One command. No PyPI, no package index, no `sudo`.
+**One line:**
 
 ```bash
-curl -fsSL https://github.com/kazkriska/tessera-v1/releases/download/v1.0.0/install.sh | bash
+curl -fsSL https://<your-repo>/dist/install.sh | bash
 ```
 
-When it finishes you have `tessera` and `ticket` on your `PATH`:
+Replace `<your-repo>` with the canonical HTTPS location that serves the
+release `dist/` directory (for example a GitHub release or a self-hosted
+mirror). The installer is **authoritative-source driven**: every behavior
+below is defined by **RFC-0013 — Distribution & Installation**
+(`formal-specifications/rfcs/rfc-0013-distribution.md`). Where this guide and
+RFC-0013 disagree, **RFC-0013 wins.**
 
-```bash
-tessera --help
-tessera repo init .
-```
+> Tessera v1 is **not** on PyPI. There is no `pip install tessera`. The only
+> supported install path is the checksum-pinned source tarball fetched by the
+> command above.
 
-## What it does
+---
 
-The bootstrap script is deliberately tiny and auditable — pipe it to `less`
-first if you want to read it before running it. In order, it:
+## What the one-liner does
 
-1. **Downloads** the pinned release tarball `tessera-1.0.0.tar.gz` and its
-   `.sha256` sidecar over HTTPS.
-2. **Verifies the SHA256** against a checksum embedded in the script itself.
-   A mismatch is a hard refusal — nothing is extracted or executed.
-3. **Extracts** to a temporary directory and hands off to the verified
-   installer modules shipped inside the tarball.
-4. **Installs** the app to the prefix `tessera/` under your home —
-   `~/.local/share/tessera` — via `uv pip install .` from the extracted
-   source (a closed, non-editable artifact resolved against the vendored
-   `uv.lock`).
-5. **Registers** the systemd user unit template
-   `~/.config/systemd/user/tessera-runtime@.service`.
-6. **Symlinks** `~/.local/bin/tessera` and `~/.local/bin/ticket` to the
-   installed entry points.
-7. **Runs a post-install E2E smoke test** — it asserts a lifecycle hook fires
-   and that `TESSERA_TICKET_ID` is set in the hook environment. If the test
-   fails the installer aborts and rolls the partial install back, so you are
-   never left with a half-installed `tessera`.
-8. **Cleans up** the tarball, bootstrap, extraction directory, and test
-   artifacts. It never removes the installed application.
+`install.sh` is the **only** thing `curl` fetches and pipes to `bash`. It is
+intentionally tiny and auditable. It then hands off to a verified installer
+that ships *inside* the tarball.
 
-Two flags are supported if you want to look before you leap:
+1. **Resolve the release.** The bootstrap hardcodes the release base URL, the
+   pinned tag/version (e.g. `v1.0.0`), the exact tarball name
+   (`tessera-<version>.tar.gz`), and an **inline SHA256** of that tarball.
+2. **Download + verify.** It fetches the tarball and its `.sha256` sidecar,
+   verifies the checksum, and **refuses (non-zero exit) on any mismatch**.
+   The tarball is never extracted or executed before it passes.
+3. **Extract** to a temporary directory.
+4. **Hand off** to `install-modules/main.sh` inside the tarball, which runs,
+   in order, with `set -euo pipefail` and a cleanup trap:
 
-```bash
-curl -fsSL <url>/install.sh | bash -s -- --check     # download + verify checksum only
-curl -fsSL <url>/install.sh | bash -s -- --dry-run   # prechecks + planned actions, no changes
-```
+   | Module | Job |
+   |--------|-----|
+   | `00-precheck.sh` | Detect Python **≥ 3.12** (install `uv` via its checksum-verified installer and run `uv python install 3.12` if missing). Detect/require `uv`. **Linux-only** platform check (abort on non-Linux). |
+   | `01-perms.sh` | User-scope permission stub. **No `sudo`** is ever invoked. |
+   | `02-scaffold.sh` | Create `~/.local/share/tessera`. Run `uv pip install .` from the extracted source (non-editable, offline-resolvable from the vendored `uv.lock`). Register the systemd user unit template. Symlink the CLI entry points. |
+   | `03-test.sh` | Run `e2e/smoke_test.py`. A **non-zero exit aborts the install** and triggers cleanup. |
+   | `04-cleanup.sh` | Remove the tarball, bootstrap script, extraction dir, E2E artifacts, and temp repos. **Never removes the installed application.** |
 
-## Requirements
+---
 
-- **Linux.** macOS and Windows are out of scope for v1; the installer detects
-  the platform and aborts with a clear message on anything else.
-- **`curl`** and network access to the release URL over TLS.
-- **Python ≥ 3.12 and `uv`** — *provided automatically if missing.* The
-  precheck module installs `uv` (official, checksum-verified installer) and
-  runs `uv python install 3.12` when no suitable Python is found. A clean box
-  with nothing but `curl` is a supported starting point.
+## User-scope default (no sudo, ever)
 
-## Where things go
+The install is **entirely within your home directory**. Nothing is written
+outside `~`, and `sudo` is never invoked — this removes the largest class of
+install-time privilege-escalation risk.
 
 | Artifact | Path |
 | --- | --- |
 | Install prefix (app) | `~/.local/share/tessera/` |
-| systemd user unit (template) | `~/.config/systemd/user/tessera-runtime@.service` |
+| Runtime systemd unit (template) | `~/.config/systemd/user/tessera-runtime@.service` |
 | CLI entry — `tessera` | `~/.local/bin/tessera` (symlink) |
 | CLI entry — `ticket` | `~/.local/bin/ticket` (symlink) |
 
-Nothing is written outside your home directory. `~/.local/bin` must be on
-your `PATH` (it is by default on most Linux distributions).
+`~/.local/bin` must be on `PATH` (standard on most Linux distributions).
+Both `tessera` (the runtime CLI) and `ticket` (the thin SDK client CLI) are
+symlinked there.
 
-## Notes
+The install prefix under the share dir is named **`tessera/`**, matching the
+two-package source layout:
 
-- **User scope, no `sudo`.** Every action stays inside your home; the
-  installer never invokes `sudo` and never touches system directories.
-- **Per-repo daemon.** The runtime is registered as a *systemd template* unit,
-  so each ticket repository gets its own instance:
-
-  ```bash
-  systemctl --user start tessera-runtime@<instance>
-  systemctl --user status tessera-runtime@<instance>
-  ```
-
-- **Upgrades are idempotent reinstalls.** Re-run the one-liner with a newer
-  pinned tag; it re-extracts and reinstalls into the same prefix. The install
-  is a closed artifact, so there is no side-by-side version state to
-  reconcile.
-- **Uninstall:**
-
-  ```bash
-  systemctl --user disable --now 'tessera-runtime@*'
-  rm -rf ~/.local/share/tessera
-  rm -f ~/.local/bin/tessera ~/.local/bin/ticket
-  rm -f ~/.config/systemd/user/tessera-runtime@.service
-  ```
-
-  Your `TicketsRepository/` data is never touched by install or uninstall.
-
-## Installing from a checkout instead
-
-Contributors working from a clone should use the development path in
-[README.md](README.md#development) (`uv venv && uv pip install -e ".[dev]"`).
-Editable installs are deliberately **not** what the user installer produces.
+- `src/tessera_runtime/` — the engine (`tessera`/`ticket` CLI, daemon,
+  `runtime.sock` RPC server).
+- `src/tessera_sdk/` — the client SDK (`import tessera_sdk`).
 
 ---
 
-**Authoritative spec:** `formal-specifications/rfcs/rfc-0013-distribution.md`.
-Where this guide and RFC-0013 disagree, the RFC wins.
+## systemd user unit
+
+The installer registers a **user-scope** systemd unit template,
+`~/.config/systemd/user/tessera-runtime@.service`. Because it is a *user*
+unit, it runs without root and starts/stop on a per-user basis:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now tessera-runtime@<workspace>.service
+journalctl --user -u tessera-runtime@<workspace>.service -f
+```
+
+(Enable lingering with `loginctl enable-linger $USER` if you want it to run
+while you are logged out.)
+
+---
+
+## Post-install E2E
+
+After scaffolding, `03-test.sh` runs `e2e/smoke_test.py`, which asserts:
+
+- A lifecycle/event **hook fired** during a minimal runtime start.
+- The environment variable **`TESSERA_TICKET_ID`** is set (proves the
+  SDK → runtime path is wired).
+
+If the smoke test returns non-zero, the installer **aborts** and
+`04-cleanup.sh` tears down the partial install — you are left with **no
+half-installed `tessera` on `PATH`**. Re-run the one-liner once you have
+resolved the environment issue.
+
+---
+
+## Clean-box requirement
+
+The installer targets a **clean Linux box**:
+
+- **Linux only.** Any non-Linux OS aborts in `00-precheck.sh` with a clear
+  message. No macOS/Windows fallbacks exist in v1 (Charter §7 Non-Goal).
+- A working `curl` and, ideally, TLS network access to the release host.
+- `~/.local/bin` on `PATH`. If a previous, broken `tessera`/`ticket` is
+  already on `PATH`, remove it first — reinstalls are **idempotent** and will
+  overwrite the prefix, but a conflicting manual install is not cleaned for
+  you.
+
+The install is a **closed, non-editable artifact** (no `-e`/`pip install -e`),
+so it never links back to a checkout. Re-running the bootstrap with a newer
+pinned tag is a safe, deterministic **reinstall** into the same prefix.
+
+---
+
+## Useful flags
+
+| Flag | Effect |
+| --- | --- |
+| `--check` | Verify the download + checksum only; do not install. |
+| `--dry-run` | Run prechecks and print planned actions without mutating the system. |
+
+```bash
+curl -fsSL https://<your-repo>/dist/install.sh | bash -s -- --check
+curl -fsSL https://<your-repo>/dist/install.sh | bash -s -- --dry-run
+```
+
+---
+
+## Verification after install
+
+```bash
+which tessera ticket          # both resolve under ~/.local/bin
+tessera --help                # runtime CLI
+ticket  --help                # SDK client CLI
+```
+
+If either reports "command not found", confirm `~/.local/bin` is on `PATH`
+and re-run the one-liner (it is idempotent).
+
+---
+
+## Uninstall
+
+`04-cleanup.sh` only removes **temporary** artifacts (tarball, bootstrap
+script, extraction dir, E2E outputs). It never deletes the installed app. To
+fully remove Tessera v1 from a box, delete the user-scoped artifacts:
+
+```bash
+systemctl --user disable --now 'tessera-runtime@*.service' 2>/dev/null
+rm -rf ~/.local/share/tessera
+rm -f  ~/.local/bin/tessera ~/.local/bin/ticket
+rm -f  ~/.config/systemd/user/tessera-runtime@.service
+systemctl --user daemon-reload
+```
+
+---
+
+## Reference
+
+- **Authoritative spec:** `formal-specifications/rfcs/rfc-0013-distribution.md`
+  (Ratified, v1.0). This INSTALL.md is a human-readable summary of RFC-0013.
+- Future (v1.1): signed tarballs (GPG / sigstore) and an opt-in `--system`
+  mode (the only place `sudo` may appear). Neither is in v1.0.

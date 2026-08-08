@@ -1,8 +1,7 @@
 # Python SDK
 
 `import tessera_sdk` — the programmatic client for the Tessera runtime
-(Part XI / RFC-0010). The package ships as `src/tessera_sdk` and is installed
-alongside the engine package `tessera_runtime`. One facade, two modes:
+(Part XI / RFC-0010). One facade, two modes:
 
 - **Direct** (`Runtime.direct`) — operate straight on the filesystem. No
   daemon needed; good for scripts, offline edits, and tests.
