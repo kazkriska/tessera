@@ -129,6 +129,7 @@ class Pipeline:
             registry=self.registry,
             runner=executor_dispatch,
             lock_dir=lock_dir,
+            bus=self.bus,
         )
 
         # Bus -> Scheduler: every domain event on a known ticket triggers a

@@ -322,3 +322,70 @@ def test_shutdown_interrupts_retry_backoff(tmp_path: Path):
 
     assert attempts["n"] == 1  # aborted during backoff; no further attempts
     assert elapsed < 5.0  # far below the 30s backoff => wait was interrupted
+
+
+def test_retry_exhaustion_writes_activity_and_bus_event(tmp_path: Path) -> None:
+    """CMP-06: exhausted retries append activity.jsonl + bus event."""
+    import json as _json
+
+    from lib.ticket_management.runtime.bus import EventBus
+
+    captured: list[dict] = []
+    bus = EventBus(recursion_max_depth=5)
+
+    def spy(event) -> None:
+        captured.append({"name": event.name, "ticket_id": event.ticket_id, "data": event.data})
+
+    bus.subscribe(spy)
+
+    def runner(ticket_id, descriptor, ticket_root, config, payload):
+        raise RuntimeError("always fails")
+
+    sched = Scheduler(
+        config=RuntimeConfig(worker_concurrency=1, retry_backoff_seconds=0.0),
+        runner=runner,
+        bus=bus,
+    )
+    root = _make_ticket(tmp_path, "T-040")
+    sched.enqueue("T-040", FakeDescriptor("fail.sh", retry=1), root, action_name="on_boom")
+    sched.shutdown(wait=True)
+
+    # Bus event published exactly once.
+    failed = [e for e in captured if e["name"] == "ticket.action.failed"]
+    assert len(failed) == 1
+    assert failed[0]["ticket_id"] == "T-040"
+    assert failed[0]["data"]["action"] == "on_boom"
+    assert failed[0]["data"]["attempts"] == 2
+
+    # activity.jsonl holds the record (2 attempts: 1 initial + 1 retry).
+    activity_path = root / "activity.jsonl"
+    assert activity_path.is_file()
+    lines = [_json.loads(line) for line in activity_path.read_text().splitlines() if line.strip()]
+    assert len(lines) == 1
+    assert lines[0]["event"] == "ticket.action.failed"
+    assert lines[0]["ticket_id"] == "T-040"
+    assert lines[0]["error"] == "always fails"
+
+
+def test_successful_job_writes_no_failure_record(tmp_path: Path) -> None:
+    """CMP-06: success emits no failed record or event."""
+    from lib.ticket_management.runtime.bus import EventBus
+
+    captured: list[str] = []
+    bus = EventBus(recursion_max_depth=5)
+    bus.subscribe(lambda event: captured.append(event.name))
+
+    def runner(ticket_id, descriptor, ticket_root, config, payload):
+        return {"ok": True}
+
+    sched = Scheduler(
+        config=RuntimeConfig(worker_concurrency=1),
+        runner=runner,
+        bus=bus,
+    )
+    root = _make_ticket(tmp_path, "T-041")
+    sched.enqueue("T-041", FakeDescriptor("ok.sh"), root, action_name="on_ok")
+    sched.shutdown(wait=True)
+
+    assert "ticket.action.failed" not in captured
+    assert not (root / "activity.jsonl").exists()
