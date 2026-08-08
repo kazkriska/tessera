@@ -136,6 +136,12 @@ def run_hook(
         event_env=None,
         permissions=permissions,
     )
+    # Expose the owning ticket id to hooks/actions (CONTRACTS §7 / docs):
+    # TESSERA_TICKET_ID is the canonical handle for scripts to know which
+    # ticket they run for. Derive from the ticket root dir name.
+    ticket_id = root.name.removesuffix(".ticket")
+    if ticket_id and "TESSERA_TICKET_ID" not in exec_env:
+        exec_env["TESSERA_TICKET_ID"] = ticket_id
 
     try:
         exit_code, stdout, stderr = runner(

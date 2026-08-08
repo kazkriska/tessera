@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from lib.ticket_management.config import RuntimeConfig
+from lib.ticket_management.repo import repo_init
 from lib.ticket_management.runtime.bus import Event
 from lib.ticket_management.runtime.dispatcher import RunnerDescriptor
 from lib.ticket_management.runtime.pipeline import (
@@ -33,7 +34,8 @@ permissions:
 
 
 def _make_ticket(root: Path, ticket_id: str = "T-1", manifest: str = MANIFEST_OK) -> Path:
-    ticket_dir = root / f"{ticket_id}.ticket"
+    # Real layout (CONTRACTS §7.1): tickets live under TicketsRepository/.
+    ticket_dir = root / "TicketsRepository" / f"{ticket_id}.ticket"
     ticket_dir.mkdir(parents=True, exist_ok=True)
     if manifest is not None:
         (ticket_dir / "MANIFEST.yaml").write_text(manifest, encoding="utf-8")
@@ -113,3 +115,64 @@ def test_pipeline_start_and_stop_closes_resources() -> None:
     # Bus events with a declared hook reach the scheduler queue.
     assert pipeline._on_event is not None
     pipeline.stop()
+
+
+def test_pipeline_ticket_root_resolves_under_tickets_repository() -> None:
+    """CMP-E2E-1: `_ticket_root` must resolve the real layout.
+
+    Tickets live at `<root>/TicketsRepository/<id>.ticket` (CONTRACTS §7.1).
+    A previous bug looked at `<root>/<id>.ticket`, so the pipeline silently
+    skipped every hook enqueue in the live daemon.
+    """
+    root = Path("/tmp/d4-test-real-layout")
+    ticket_dir = _make_ticket(root)
+    pipeline = Pipeline(root=root)
+    pipeline.repo = repo_init(root)
+    assert pipeline._ticket_root("T-1") == ticket_dir
+    assert pipeline._ticket_root("nope") is None
+
+
+def test_pipeline_event_to_hook_enqueues_with_real_layout(tmp_path: Path) -> None:
+    """CMP-E2E-1: a bus event for a real-layout ticket RUNS its hook.
+
+    The regression test for the live-daemon hook failure: publish
+    `metadata.updated` for a ticket under TicketsRepository/ and assert the
+    declared hook actually executes (durable side effect), proving the
+    pipeline no longer silently skips hook enqueue due to a wrong ticket-root
+    lookup.
+    """
+    ticket_dir = _make_ticket(tmp_path, "T-E2E")
+    (ticket_dir / "metadata.json").write_text('{"id": "T-E2E"}', encoding="utf-8")
+    (ticket_dir / "MANIFEST.yaml").write_text(
+        "apiVersion: ticket/v1\n"
+        "kind: Ticket\n"
+        "metadata:\n"
+        "  id: T-E2E\n"
+        "  title: E2E ticket\n"
+        "  type: task\n"
+        "hooks:\n"
+        "  on_metadata_updated:\n"
+        "    - run: echo hook-ran >> hook_marker.txt\n"
+        "      shell: bash\n"
+        "permissions:\n"
+        "  capabilities:\n"
+        "    - run:bash\n",
+        encoding="utf-8",
+    )
+    pipeline = Pipeline(root=tmp_path, config=RuntimeConfig(worker_concurrency=1))
+    pipeline.start()
+    try:
+        marker = ticket_dir / "hook_marker.txt"
+        pipeline.bus.publish(
+            Event(name="metadata.updated", ticket_id="T-E2E", data={})
+        )
+        import time
+
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            if marker.exists():
+                break
+            time.sleep(0.05)
+        assert marker.exists(), "declared hook did not execute for a real-layout ticket"
+    finally:
+        pipeline.stop()

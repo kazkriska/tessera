@@ -271,7 +271,10 @@ class RuntimeServer:
                 result = run_hook(
                     descriptor=runner,
                     ticket_root=ticket_dir,
-                    config=self.config,
+                    # Use the pipeline's boot-resolved config: `self.config`
+                    # may be None when the daemon started without an explicit
+                    # config (Pipeline loads `.ticket-runtime/config.yaml`).
+                    config=self.pipeline.config,
                     permissions=manifest.permissions,
                 )
             return {

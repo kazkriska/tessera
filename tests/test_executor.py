@@ -82,7 +82,7 @@ def test_executor_env_masks_denylisted_keys():
     assert env["KEEP_ME"] == "yes"
 
 
-def test_executor_env_merge_order_and_secrets():
+def test_executor_env_merge_order_and_secrets() -> None:
     env = build_exec_env(
         base_env={"A": "base", "B": "base"},
         ticket_env={"B": "ticket"},
@@ -94,6 +94,30 @@ def test_executor_env_merge_order_and_secrets():
     assert env["B"] == "event"  # event layer wins
     assert env["C"] == "manifest"
     assert env["TOKEN"] == "s3cr3t"
+
+
+def test_executor_injects_tessera_ticket_id(tmp_path: Path) -> None:
+    """CMP-E2E-3: hooks/actions receive TESSERA_TICKET_ID (CONTRACTS §7).
+
+    The ticket id is derivable from the ticket root dir name; scripts rely on
+    it (docs advertise it). It must be present in the execution environment.
+    """
+    script = _write(
+        tmp_path, "whoami.sh", "#!/bin/bash\necho \"id=$TESSERA_TICKET_ID\"\n"
+    )
+    config = RuntimeConfig()
+    descriptor = RunnerDescriptor(path="whoami.sh", shell="bash")
+    # run_hook expects a <id>.ticket root; emulate via a nested dir.
+    ticket_root = tmp_path / "T-E2E3.ticket"
+    ticket_root.mkdir()
+    (ticket_root / "whoami.sh").write_text(
+        "#!/bin/bash\necho \"id=$TESSERA_TICKET_ID\"\n", encoding="utf-8"
+    )
+    result = run_hook(
+        RunnerDescriptor(path="whoami.sh", shell="bash"), ticket_root, config
+    )
+    assert result.exit_code == 0
+    assert "id=T-E2E3" in result.stdout
 
 
 def test_resolve_ticket_env_global_and_inherit(tmp_path: Path):
