@@ -295,6 +295,34 @@ def test_different_workspace_tickets_run_in_parallel(tmp_path: Path) -> None:
     assert max_active["n"] >= 2  # two queues overlapped
 
 
+def test_priority_bands_order_the_queue(tmp_path: Path) -> None:
+    """CMP-11 (CONTRACTS §5 / FRAME R.A.8): lower band = higher priority."""
+    gate = threading.Event()
+    run_order: list[str] = []
+    lock = threading.Lock()
+
+    def runner(ticket_id, descriptor, ticket_root, config, payload):
+        if descriptor.run == "bg.sh":
+            gate.wait(timeout=10)  # hold the first job so others queue up
+        with lock:
+            run_order.append(descriptor.run)
+        time.sleep(0.05)
+        return {"ok": True}
+
+    sched = Scheduler(config=RuntimeConfig(worker_concurrency=1), runner=runner)
+    root = _make_ticket(tmp_path, "T-PRI")
+
+    sched.enqueue("T-PRI", FakeDescriptor("bg.sh"), root, priority=3)  # background
+    sched.enqueue("T-PRI", FakeDescriptor("hook.sh"), root, priority=2)  # hook
+    sched.enqueue("T-PRI", FakeDescriptor("emergency.sh"), root, priority=0)  # emergency
+    gate.set()
+    sched.shutdown(wait=True)
+
+    # bg ran first (it was already in flight), then the queued jobs in
+    # priority order: emergency (0) before hook (2).
+    assert run_order == ["bg.sh", "emergency.sh", "hook.sh"]
+
+
 def test_shutdown_interrupts_retry_backoff(tmp_path: Path):
     """shutdown(wait=True) must not be blocked for the full backoff window."""
     attempts = {"n": 0}
