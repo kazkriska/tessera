@@ -22,9 +22,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from lib.ticket_management.config import load_config
-from lib.ticket_management.relationships import build_relationship_index
-from lib.ticket_management.runtime.registry import Registry
+from tessera_runtime.config import load_config
+from tessera_runtime.relationships import build_relationship_index
+from tessera_runtime.runtime.registry import Registry
 
 __all__ = [
     "REPO_DIR_NAME",

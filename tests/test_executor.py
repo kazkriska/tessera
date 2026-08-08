@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from lib.ticket_management.config import RuntimeConfig
-from lib.ticket_management.plugins.bash_runner import bash_runner
-from lib.ticket_management.plugins.node_runner import node_runner
-from lib.ticket_management.plugins.python_runner import python_runner
-from lib.ticket_management.runtime.dispatcher import PathJailError, RunnerDescriptor
-from lib.ticket_management.runtime.executor import (
+from tessera_runtime.config import RuntimeConfig
+from tessera_runtime.plugins.bash_runner import bash_runner
+from tessera_runtime.plugins.node_runner import node_runner
+from tessera_runtime.plugins.python_runner import python_runner
+from tessera_runtime.runtime.dispatcher import PathJailError, RunnerDescriptor
+from tessera_runtime.runtime.executor import (
     ENV_DENYLIST,
     build_exec_env,
     run_hook,
@@ -122,7 +122,7 @@ def test_executor_injects_tessera_ticket_id(tmp_path: Path) -> None:
 
 def test_resolve_ticket_env_global_and_inherit(tmp_path: Path):
     """Global Tickets/.env -> Ticket .env, with env.inherit:false opt-out."""
-    from lib.ticket_management.runtime.env import resolve_ticket_env
+    from tessera_runtime.runtime.env import resolve_ticket_env
 
     repo = tmp_path / "framework"
     tickets = repo / "TicketsRepository"

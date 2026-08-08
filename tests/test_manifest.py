@@ -6,7 +6,7 @@ import textwrap
 
 import pytest
 
-from lib.ticket_management.runtime.manifest import (
+from tessera_runtime.runtime.manifest import (
     ExecDescriptor,
     ManifestValidationError,
     load_manifest,

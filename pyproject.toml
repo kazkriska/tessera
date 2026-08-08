@@ -22,11 +22,11 @@ dev = [
 ]
 
 [project.scripts]
-ticket = "ticket_management.cli:main"
-tessera = "ticket_management.cli:main"
+ticket = "tessera_runtime.cli:main"
+tessera = "tessera_runtime.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["tessera", "lib/ticket_management"]
+packages = ["src/tessera_sdk", "src/tessera_runtime"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

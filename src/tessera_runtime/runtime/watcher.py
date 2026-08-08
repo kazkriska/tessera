@@ -20,8 +20,8 @@ from typing import Any, Callable, Optional
 
 from inotify_simple import flags as _IN
 
-from lib.ticket_management.config import RuntimeConfig
-from lib.ticket_management.runtime.bus import Event, EventBus
+from tessera_runtime.config import RuntimeConfig
+from tessera_runtime.runtime.bus import Event, EventBus
 
 __all__ = ["FsWatcher"]
 
@@ -96,7 +96,7 @@ class FsWatcher:
             return self._watch_rules[ticket_id]
         rules: list[dict[str, Any]] = []
         try:
-            from lib.ticket_management.runtime.manifest import load_manifest
+            from tessera_runtime.runtime.manifest import load_manifest
 
             if self.repo_path is not None:
                 manifest_path = (

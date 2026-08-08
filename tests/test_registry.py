@@ -1,4 +1,4 @@
-"""Tests for lib.ticket_management.runtime.registry."""
+"""Tests for tessera_runtime.runtime.registry."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from lib.ticket_management.runtime.registry import (
+from tessera_runtime.runtime.registry import (
     Registry,
     TicketRef,
     discover_tickets,
 )
-from lib.ticket_management.relationships import build_relationship_index
+from tessera_runtime.relationships import build_relationship_index
 
 
 # --------------------------------------------------------------------------- #

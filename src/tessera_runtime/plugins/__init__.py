@@ -3,6 +3,6 @@
 Each runner adapts a hook/action descriptor to a concrete interpreter
 invocation under the Executor's isolation rules.
 
-Runners are registered through :data:`lib.ticket_management.runtime.executor.RUNNERS`
+Runners are registered through :data:`tessera_runtime.runtime.executor.RUNNERS`
 (keyed by ``shell`` name) and resolved by :func:`...dispatcher.resolve_runner`.
 """

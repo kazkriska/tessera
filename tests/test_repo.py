@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lib.ticket_management.repo import (
+from tessera_runtime.repo import (
     REPO_DIR_NAME,
     RUNTIME_DIR_NAME,
     RUNTIME_SUBDIRS,

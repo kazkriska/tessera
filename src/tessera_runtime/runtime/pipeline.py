@@ -31,16 +31,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from lib.ticket_management.config import RuntimeConfig
-from lib.ticket_management.repo import repo_init, rescan
-from lib.ticket_management.runtime.bus import Event, EventBus
-from lib.ticket_management.runtime.dispatcher import RunnerDescriptor
-from lib.ticket_management.runtime.env import resolve_ticket_env
-from lib.ticket_management.runtime.executor import ExecutionResult, run_hook
-from lib.ticket_management.runtime.manifest import ManifestValidationError, load_manifest
-from lib.ticket_management.runtime.registry import Registry
-from lib.ticket_management.runtime.scheduler import Scheduler
-from lib.ticket_management.runtime.watcher import FsWatcher
+from tessera_runtime.config import RuntimeConfig
+from tessera_runtime.repo import repo_init, rescan
+from tessera_runtime.runtime.bus import Event, EventBus
+from tessera_runtime.runtime.dispatcher import RunnerDescriptor
+from tessera_runtime.runtime.env import resolve_ticket_env
+from tessera_runtime.runtime.executor import ExecutionResult, run_hook
+from tessera_runtime.runtime.manifest import ManifestValidationError, load_manifest
+from tessera_runtime.runtime.registry import Registry
+from tessera_runtime.runtime.scheduler import Scheduler
+from tessera_runtime.runtime.watcher import FsWatcher
 
 __all__ = ["Pipeline", "EVENT_HOOK_MAP", "executor_dispatch"]
 
@@ -77,7 +77,7 @@ class Pipeline:
         # caller did not hand us a config. A missing file yields defaults
         # (Invariant I-2 — deleting `.ticket-runtime/` reverts to defaults).
         if self.config is None:
-            from lib.ticket_management.config import load_config
+            from tessera_runtime.config import load_config
 
             cfg_path = (
                 root
@@ -124,7 +124,7 @@ class Pipeline:
         self.approval_cache_dir = approval_dir.resolve()
 
         # Reap stale ticket locks left by a crashed runtime (RFC-0006).
-        from lib.ticket_management.runtime.scheduler import reap_stale_locks
+        from tessera_runtime.runtime.scheduler import reap_stale_locks
 
         reaped = reap_stale_locks(lock_dir)
         if reaped:
@@ -227,7 +227,7 @@ class Pipeline:
             return None
         # Tickets live under `<root>/TicketsRepository/<id>.ticket`;
         # repo_init returns the framework root, not the repo dir.
-        from lib.ticket_management.repo import REPO_DIR_NAME
+        from tessera_runtime.repo import REPO_DIR_NAME
 
         candidate = self.repo / REPO_DIR_NAME / f"{ticket_id}.ticket"
         return candidate if candidate.is_dir() else None
@@ -248,7 +248,7 @@ class Pipeline:
         """
         level = getattr(logging, str(config.log_level).upper(), logging.INFO)
 
-        root = logging.getLogger("lib.ticket_management")
+        root = logging.getLogger("tessera_runtime")
         # Remove handlers whose target differs from the requested one;
         # keep a matching handler so repeated boots don't stack.
         for handler in list(root.handlers):

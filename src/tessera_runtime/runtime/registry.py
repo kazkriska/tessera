@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from lib.ticket_management.models import ID_PATTERN
+from tessera_runtime.models import ID_PATTERN
 
 logger = logging.getLogger(__name__)
 

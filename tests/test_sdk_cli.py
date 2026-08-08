@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from tessera import Runtime, RuntimeNotRunning
+from tessera_sdk import Runtime, RuntimeNotRunning
 
 runner = CliRunner()
 
@@ -18,7 +18,7 @@ runner = CliRunner()
 @pytest.fixture()
 def repo(tmp_path: Path) -> Path:
     """Scaffold a fresh framework root with one ticket."""
-    from lib.ticket_management.repo import repo_init
+    from tessera_runtime.repo import repo_init
 
     root = repo_init(tmp_path / "framework")
     ticket_dir = root / "TicketsRepository" / "T-1.ticket"
@@ -105,8 +105,8 @@ def test_sdk_emit_publishes_on_bus(repo: Path) -> None:
 # Runtime server (attach mode)
 # --------------------------------------------------------------------------- #
 def test_runtime_server_attach_roundtrip(repo: Path) -> None:
-    from lib.ticket_management.config import RuntimeConfig
-    from lib.ticket_management.runtime.server import RuntimeServer
+    from tessera_runtime.config import RuntimeConfig
+    from tessera_runtime.runtime.server import RuntimeServer
 
     server = RuntimeServer(repo, RuntimeConfig(worker_concurrency=1))
     sock = server.start()
@@ -126,9 +126,9 @@ def test_runtime_server_attach_roundtrip(repo: Path) -> None:
 # CLI
 # --------------------------------------------------------------------------- #
 def test_cli_create_inspect_transition(repo: Path) -> None:
-    from lib.ticket_management.cli import app
-    from lib.ticket_management.config import RuntimeConfig
-    from lib.ticket_management.runtime.server import RuntimeServer
+    from tessera_runtime.cli import app
+    from tessera_runtime.config import RuntimeConfig
+    from tessera_runtime.runtime.server import RuntimeServer
 
     # Create T-2
     result = runner.invoke(app, ["create", "T-2", "--repo", str(repo)])
@@ -161,7 +161,7 @@ def test_cli_create_inspect_transition(repo: Path) -> None:
 
 
 def test_cli_validate_and_log(repo: Path) -> None:
-    from lib.ticket_management.cli import app
+    from tessera_runtime.cli import app
 
     result = runner.invoke(app, ["validate", "T-1", "--repo", str(repo)])
     assert result.exit_code == 0, result.output
@@ -174,7 +174,7 @@ def test_cli_validate_and_log(repo: Path) -> None:
 
 
 def test_cli_repo_scan(repo: Path) -> None:
-    from lib.ticket_management.cli import app
+    from tessera_runtime.cli import app
 
     result = runner.invoke(app, ["repo", "scan", str(repo)])
     assert result.exit_code == 0, result.output

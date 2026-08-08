@@ -22,16 +22,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from lib.ticket_management.config import RuntimeConfig, load_config
-from lib.ticket_management.models import TicketMetadata, TicketState
-from lib.ticket_management.repo import REPO_DIR_NAME, RUNTIME_DIR_NAME, repo_init, rescan
-from lib.ticket_management.runtime.bus import Event, EventBus
-from lib.ticket_management.runtime.manifest import (
+from tessera_runtime.config import RuntimeConfig, load_config
+from tessera_runtime.models import TicketMetadata, TicketState
+from tessera_runtime.repo import REPO_DIR_NAME, RUNTIME_DIR_NAME, repo_init, rescan
+from tessera_runtime.runtime.bus import Event, EventBus
+from tessera_runtime.runtime.manifest import (
     ManifestValidationError,
     load_manifest,
 )
-from lib.ticket_management.runtime.registry import Registry
-from lib.ticket_management.runtime.state import (
+from tessera_runtime.runtime.registry import Registry
+from tessera_runtime.runtime.state import (
     TransitionError,
     emit_lifecycle_event,
     transition,
@@ -264,8 +264,8 @@ class Runtime:
             raise SDKError(
                 f"action {action!r} not declared in MANIFEST.yaml for {ticket_id}"
             )
-        from lib.ticket_management.runtime.dispatcher import RunnerDescriptor
-        from lib.ticket_management.runtime.executor import run_hook
+        from tessera_runtime.runtime.dispatcher import RunnerDescriptor
+        from tessera_runtime.runtime.executor import run_hook
 
         runner = RunnerDescriptor(
             path=descriptor.run,
@@ -328,6 +328,6 @@ class Runtime:
 
 def find_repo_root(start: str | Path | None = None) -> Path:
     """Locate the framework root (directory containing ``TicketsRepository``)."""
-    from lib.ticket_management.repo import get_repo_root
+    from tessera_runtime.repo import get_repo_root
 
     return get_repo_root(start)

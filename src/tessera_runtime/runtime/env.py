@@ -6,7 +6,7 @@ Event payload, and apply the secret DENYLIST (AWS_SECRET_ACCESS_KEY,
 DATABASE_URL, SSH_AUTH_SOCK, SUDO_USER, ...) before handing the environment to
 a subprocess.
 
-The canonical merge lives in :func:`lib.ticket_management.runtime.executor.build_exec_env`;
+The canonical merge lives in :func:`tessera_runtime.runtime.executor.build_exec_env`;
 this module adds the file-loading layer (``.env`` parsing) and a convenience
 resolver that loads Ticket ``.env`` and Manifest ``env`` from a ticket root.
 """
@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from lib.ticket_management.runtime.executor import build_exec_env
+from tessera_runtime.runtime.executor import build_exec_env
 
 __all__ = ["load_dotenv", "resolve_ticket_env"]
 
@@ -76,7 +76,7 @@ def resolve_ticket_env(
     manifest_path = root / "MANIFEST.yaml"
     if manifest_path.is_file():
         try:
-            from lib.ticket_management.runtime.manifest import load_manifest
+            from tessera_runtime.runtime.manifest import load_manifest
 
             manifest = load_manifest(manifest_path)
             manifest_env = {

@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from lib.ticket_management.config import RuntimeConfig
-from lib.ticket_management.repo import repo_init
-from lib.ticket_management.runtime.bus import Event
-from lib.ticket_management.runtime.dispatcher import RunnerDescriptor
-from lib.ticket_management.runtime.pipeline import (
+from tessera_runtime.config import RuntimeConfig
+from tessera_runtime.repo import repo_init
+from tessera_runtime.runtime.bus import Event
+from tessera_runtime.runtime.dispatcher import RunnerDescriptor
+from tessera_runtime.runtime.pipeline import (
     EVENT_HOOK_MAP,
     Pipeline,
     executor_dispatch,
@@ -44,7 +44,7 @@ def _make_ticket(root: Path, ticket_id: str = "T-1", manifest: str = MANIFEST_OK
 
 def test_executor_dispatch_builds_env_and_runs() -> None:
     with pytest.MonkeyPatch.context() as mp:
-        import lib.ticket_management.runtime.pipeline as pipeline_mod
+        import tessera_runtime.runtime.pipeline as pipeline_mod
 
         captured: dict[str, object] = {}
 

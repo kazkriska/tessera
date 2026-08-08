@@ -1,4 +1,4 @@
-"""Tests for lib.ticket_management.models (Kanban A3).
+"""Tests for tessera_runtime.models (Kanban A3).
 
 Covers: metadata round-trip incl. relationship fields, id validation,
 the canonical 9-state enum, atomic_write_json, and the flock-guarded
@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from lib.ticket_management.models import (
+from tessera_runtime.models import (
     Owner,
     OwnerType,
     StateStatus,
