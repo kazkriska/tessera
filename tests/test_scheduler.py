@@ -417,3 +417,57 @@ def test_successful_job_writes_no_failure_record(tmp_path: Path) -> None:
 
     assert "ticket.action.failed" not in captured
     assert not (root / "activity.jsonl").exists()
+
+
+def test_ticket_lock_released_during_runner_execution(tmp_path: Path) -> None:
+    """CMP-02: the ticket lock is NOT held while a hook subprocess runs.
+
+    The action lock serializes same-action runs (CMP-03); the ticket lock
+    guards only state-mutation critical sections (socket transitions), so
+    a transition on the same ticket must proceed during a long hook.
+    """
+    from lib.ticket_management.runtime.scheduler import ticket_lock
+
+    entered = threading.Event()
+    release = threading.Event()
+    lock_dir = tmp_path / "locks"
+
+    def runner(ticket_id, descriptor, ticket_root, config, payload):
+        entered.set()
+        assert release.wait(timeout=10), "test gate never released"
+
+    sched = Scheduler(
+        config=RuntimeConfig(worker_concurrency=1),
+        runner=runner,
+        lock_dir=lock_dir,
+    )
+    root = _make_ticket(tmp_path, "T-LOCK")
+    sched.enqueue("T-LOCK", FakeDescriptor("slow.sh"), root, action_name="on_slow")
+
+    assert entered.wait(timeout=5), "runner never started"
+
+    # While the runner is inside the action lock, the TICKET lock must be
+    # free: a competing socket transition would acquire it immediately.
+    with ticket_lock(lock_dir, "T-LOCK"):
+        pass  # acquired without blocking => lock released by the runner path
+
+    # And the ACTION lock must be held for the same ticket+action.
+    action_locked = threading.Event()
+
+    def try_action_lock() -> None:
+        try:
+            from lib.ticket_management.runtime.scheduler import action_lock
+
+            with action_lock(lock_dir, "T-LOCK", "on_slow"):
+                action_locked.set()
+        except Exception:  # noqa: BLE001
+            pass
+
+    t = threading.Thread(target=try_action_lock)
+    t.start()
+    t.join(timeout=0.5)
+    assert not action_locked.is_set(), "action lock was free while runner held it"
+
+    release.set()
+    sched.shutdown(wait=True)
+    t.join(timeout=2)  # probe thread finishes once the action lock frees

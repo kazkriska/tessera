@@ -325,28 +325,30 @@ class Scheduler:
             attempt = 0
             while True:
                 try:
-                    # RFC-0006:19: the same action on a ticket must not run
-                    # concurrently (a long hook starting twice). Different
-                    # actions on the same ticket stay concurrent.
+                    # CMP-03: the same action on a ticket must not run
+                    # concurrently (a long hook starting twice) — the
+                    # action lock covers the whole run. CMP-02: the ticket
+                    # lock is NOT held here; it guards only state-mutation
+                    # critical sections (socket transitions, CMP-01), so a
+                    # transition can proceed while a hook subprocess runs.
                     action_key = job.action_name or job.run
                     with self._action_lock(job.ticket_id, action_key):
-                        with self._ticket_lock(job.ticket_id):
-                            if self.runner is not None:
-                                result = self.runner(
-                                    job.ticket_id,
-                                    job.descriptor,
-                                    job.ticket_root,
-                                    job.config,
-                                    job.event_payload,
-                                )
-                            else:
-                                # No runner wired: report the would-be dispatch.
-                                result = {
-                                    "ticket_id": job.ticket_id,
-                                    "run": job.run,
-                                    "attempt": attempt,
-                                    "dispatched": True,
-                                }
+                        if self.runner is not None:
+                            result = self.runner(
+                                job.ticket_id,
+                                job.descriptor,
+                                job.ticket_root,
+                                job.config,
+                                job.event_payload,
+                            )
+                        else:
+                            # No runner wired: report the would-be dispatch.
+                            result = {
+                                "ticket_id": job.ticket_id,
+                                "run": job.run,
+                                "attempt": attempt,
+                                "dispatched": True,
+                            }
                     return result
                 except Exception as exc:  # noqa: BLE001
                     attempt += 1
