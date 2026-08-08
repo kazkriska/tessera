@@ -333,11 +333,43 @@ class Scheduler:
                             "attempts": attempt,
                             "error": str(exc),
                         }
+                    # Backoff between attempts (RFC-0006:24): exponential
+                    # 2^(attempt-1) * base, interruptible by shutdown so
+                    # shutdown(wait=True) is never blocked for the full
+                    # window.
+                    delay = self._backoff_delay(attempt, job.config)
+                    if delay > 0:
+                        self._stopping.wait(delay)
+                        if self._stopping.is_set():
+                            logger.info(
+                                "scheduler: job %s/%s aborted during backoff "
+                                "(shutdown)",
+                                job.ticket_id,
+                                job.run,
+                            )
+                            return {
+                                "ticket_id": job.ticket_id,
+                                "run": job.run,
+                                "failed": True,
+                                "attempts": attempt,
+                                "error": "shutdown during backoff",
+                            }
         finally:
             # The debounce key lives until the job fully completes; only then
             # may a fresh event for the same (ticket_id, run) enqueue again.
             with self._lock:
                 self._pending.pop((job.ticket_id, job.run), None)
+
+    @staticmethod
+    def _backoff_delay(attempt: int, config: RuntimeConfig) -> float:
+        """Exponential backoff before retry *attempt*: base * 2**(attempt-1).
+
+        RFC-0006:24. A non-positive base (or attempt <= 0) means no delay.
+        """
+        base = float(getattr(config, "retry_backoff_seconds", 1.0))
+        if attempt <= 0 or base <= 0:
+            return 0.0
+        return base * (2 ** (attempt - 1))
 
     def _wait_for_dependencies(self, job: ScheduledJob) -> None:
         """Block until all ``depends_on`` tickets are ``completed`` (or the
