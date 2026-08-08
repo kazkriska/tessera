@@ -94,7 +94,7 @@ UNIT_PATH="${TESSERA_SYSTEMD_USER_DIR}/tessera-runtime@.service"
 cat >"${UNIT_PATH}" <<UNIT
 [Unit]
 Description=Tessera runtime daemon for %I
-Documentation=https://github.com/kazkriska/tessera-v1
+Documentation=https://github.com/kazkriska/tessera
 After=network.target
 
 [Service]

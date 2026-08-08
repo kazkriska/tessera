@@ -2,7 +2,7 @@
 # Tessera v1 — bootstrap installer (curl target).
 #
 #   curl --proto '=https' --tlsv1.2 -fsSL \
-#     https://github.com/kazkriska/tessera-v1/releases/download/v1.0.0/install.sh | bash
+#     https://github.com/kazkriska/tessera/releases/download/v1.0.0/install.sh | bash
 #
 # This file is intentionally tiny: it downloads the release tarball, verifies
 # its SHA256, extracts it to a temp dir, and hands off to the install modules.
@@ -12,7 +12,7 @@ set -euo pipefail
 # --------------------------------------------------------------------------- #
 # Release coordinates (literal, baked at release time)
 # --------------------------------------------------------------------------- #
-RELEASE_BASE_URL="https://github.com/kazkriska/tessera-v1/releases/download/v1.0.0"
+RELEASE_BASE_URL="https://github.com/kazkriska/tessera/releases/download/v1.0.0"
 TARBALL_NAME="tessera-1.0.0.tar.gz"
 
 # PLACEHOLDER — the build pipeline MUST rewrite this literal with the real
@@ -20,7 +20,7 @@ TARBALL_NAME="tessera-1.0.0.tar.gz"
 #   sha256sum dist/tessera-1.0.0.tar.gz | awk '{print $1}'
 # then substitute it below. Shipping with the placeholder makes every install
 # fail closed at the verification phase (by design).
-EXPECTED_SHA256="4110bd7ce017ad9dcb9781136019f2a6c1a2ac2f94e9489cb9edfedc3b93be96"
+EXPECTED_SHA256="922d12defde8fc3bbd34ad35d8bde78f2a9582c6a2061c009d9a461c7da0ee54"
 
 TESSERA_VERSION="1.0.0"
 

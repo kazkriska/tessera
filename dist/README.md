@@ -34,7 +34,7 @@ Everything is configured from one optional file: `.ticket-runtime/config.yaml`
 Tessera is distributed as a self-contained source tarball. The fastest path:
 
 ```bash
-curl -fsSL https://github.com/kazkriska/tessera-v1/releases/download/v1.0.0/install.sh | bash
+curl -fsSL https://github.com/kazkriska/tessera/releases/download/v1.0.0/install.sh | bash
 ```
 
 This downloads the release tarball, verifies its SHA256, extracts it, and runs

@@ -33,7 +33,7 @@ Everything is configured from one optional file: `.ticket-runtime/config.yaml`
 
 ```bash
 # 1. Install — end users (no source checkout):
-curl -fsSL https://github.com/kazkriska/tessera-v1/releases/download/v1.0.0/install.sh | bash
+curl -fsSL https://github.com/kazkriska/tessera/releases/download/v1.0.0/install.sh | bash
 
 #    Contributors working from a checkout instead use the editable install:
 #      uv venv && uv pip install -e ".[dev]"
@@ -107,7 +107,7 @@ docs/                    end-user documentation
 
 Tessera v1 is distributed as a self-contained source tarball (not via PyPI).
 The user install guide lives in [INSTALL.md](INSTALL.md); the authoritative
-spec is [RFC-0013](https://github.com/<your-org>/tessera-v1/blob/main/formal-specifications/rfcs/rfc-0013-distribution.md).
+spec is [RFC-0013](https://github.com/<your-org>/tessera/blob/main/formal-specifications/rfcs/rfc-0013-distribution.md).
 In short:
 
 ```bash
