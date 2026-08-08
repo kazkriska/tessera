@@ -210,6 +210,30 @@ def test_pipeline_loads_config_yaml(tmp_path: Path) -> None:
         p.stop()
 
 
+def test_pipeline_honors_registry_path(tmp_path: Path) -> None:
+    """CMP-08: config.yaml registry_path is honored (CONTRACTS §5)."""
+    from lib.ticket_management.repo import RUNTIME_DIR_NAME, repo_init
+    from lib.ticket_management.runtime.pipeline import Pipeline
+
+    repo = repo_init(tmp_path / "fw")
+    runtime_dir = repo / "TicketsRepository" / RUNTIME_DIR_NAME
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    (runtime_dir / "config.yaml").write_text(
+        "registry_path: custom-registry.db\n",
+        encoding="utf-8",
+    )
+
+    p = Pipeline(root=repo)
+    p.start()
+    try:
+        custom = runtime_dir / "custom-registry.db"
+        assert custom.exists(), f"expected registry at {custom}"
+        default = runtime_dir / "registry.db"
+        assert not default.exists(), "default registry.db must not be created"
+    finally:
+        p.stop()
+
+
 def test_pipeline_defaults_when_no_config(tmp_path: Path) -> None:
     """Missing config.yaml yields canonical defaults (Invariant I-2)."""
     from lib.ticket_management.runtime.pipeline import Pipeline
