@@ -2,7 +2,7 @@
 
 This guide takes you from an empty machine to a running Tessera runtime with
 your first ticket and your first automated action. Everything here was verified
-against the current `main` (v0.1.0).
+against the current `main` (v1.0.0).
 
 ## 1. Prerequisites
 
@@ -14,22 +14,35 @@ against the current `main` (v0.1.0).
 
 ## 2. Install
 
+**End users** install Tessera with the one-line bootstrap (no source checkout needed):
+
+```bash
+curl -fsSL https://github.com/kazkriska/tessera-v1/releases/download/v1.0.0/install.sh | bash
+```
+
+This puts `tessera` and `ticket` on your `PATH` (under `~/.local/bin`). See
+`INSTALL.md` for the full walkthrough and `formal-specifications/rfcs/rfc-0013-distribution.md`
+for the authoritative spec.
+
+**Contributors** (working from a source checkout) instead use the editable install:
+
 ```bash
 cd tessera-v1
 uv venv
 uv pip install -e ".[dev]"
 ```
 
-Verify the CLI is on your path inside the venv:
+Verify the CLI is available (contributors run it via `uv run tessera`, end users
+simply `tessera` since it is on `PATH`):
 
 ```bash
-uv run tessera --help
+tessera --help
 ```
 
 ## 3. Create a repository
 
 ```bash
-uv run tessera repo init .
+tessera repo init .
 ```
 
 This scaffolds:
@@ -45,7 +58,7 @@ you can run commands from any subdirectory of your project.
 ## 4. Create a ticket
 
 ```bash
-uv run tessera create HQ_BR-010 --type task
+tessera create HQ_BR-010 --type task
 ```
 
 This writes a complete ticket directory:
@@ -60,7 +73,7 @@ TicketsRepository/HQ_BR-010.ticket/
 Inspect it:
 
 ```bash
-uv run tessera inspect HQ_BR-010
+tessera inspect HQ_BR-010
 # id:    HQ_BR-010
 # title: HQ_BR-010
 # type:  task
@@ -88,14 +101,14 @@ actions:
 Validate it:
 
 ```bash
-uv run tessera validate HQ_BR-010     # -> valid
+tessera validate HQ_BR-010     # -> valid
 ```
 
 ## 6. Start the runtime
 
 ```bash
-uv run tessera runtime start
-uv run tessera runtime status
+tessera runtime start
+tessera runtime status
 ```
 
 The daemon boots the watcher (inotify), the event bus, the scheduler, and a
@@ -107,7 +120,7 @@ singleton — starting twice fails with "runtime already running".
 Mutating commands (`transition`, `action`) require the running daemon:
 
 ```bash
-uv run tessera action HQ_BR-010 greet
+tessera action HQ_BR-010 greet
 # action greet on HQ_BR-010: exit=0
 # hello from HQ_BR-010
 ```
@@ -115,10 +128,10 @@ uv run tessera action HQ_BR-010 greet
 ## 8. Walk the lifecycle
 
 ```bash
-uv run tessera transition HQ_BR-010 initialized
-uv run tessera transition HQ_BR-010 ready
-uv run tessera transition HQ_BR-010 running
-uv run tessera transition HQ_BR-010 completed
+tessera transition HQ_BR-010 initialized
+tessera transition HQ_BR-010 ready
+tessera transition HQ_BR-010 running
+tessera transition HQ_BR-010 completed
 ```
 
 Each transition is validated against the state machine (see
@@ -126,13 +139,13 @@ Each transition is validated against the state machine (see
 `activity.jsonl`:
 
 ```bash
-uv run tessera log HQ_BR-010
+tessera log HQ_BR-010
 ```
 
 ## 9. Stop the runtime
 
 ```bash
-uv run tessera runtime stop
+tessera runtime stop
 ```
 
 ## Next steps

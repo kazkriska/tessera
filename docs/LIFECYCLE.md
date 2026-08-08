@@ -48,7 +48,7 @@ mapping in [TICKETS.md](TICKETS.md#3-hooks--event-driven)).
 
 ## Driving transitions
 
-- CLI: `uv run tessera transition <id> <status>` (requires a running daemon)
+- CLI: `tessera transition <id> <status>` (requires a running daemon)
 - SDK: `runtime.transition(id, status, reason=...)` (direct mode works too)
 - The transition is written atomically to `state.json` and appended to
   `activity.jsonl`.

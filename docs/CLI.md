@@ -4,7 +4,8 @@ The CLI wraps the Python SDK (`tessera.Runtime`) — there is no duplicated
 logic. Two console scripts are installed, both identical: `tessera` and
 `ticket`.
 
-Run everything inside the venv: `uv run tessera …`.
+Run `tessera …` directly once installed (it is on your `PATH`). Inside a source
+checkout, prefix with `uv run` (`uv run tessera …`).
 
 ## Command groups
 
