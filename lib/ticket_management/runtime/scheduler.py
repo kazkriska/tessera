@@ -10,6 +10,7 @@ ordering (a ticket's jobs wait until its ``depends_on`` tickets reach
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import logging
 import os
@@ -18,7 +19,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 from lib.ticket_management.config import RuntimeConfig
 
@@ -28,7 +29,30 @@ __all__ = [
     "ScheduledJob",
     "Scheduler",
     "reap_stale_locks",
+    "ticket_lock",
 ]
+
+
+@contextlib.contextmanager
+def ticket_lock(lock_dir: str | Path, ticket_id: str) -> Iterator[Path]:
+    """Exclusive ``fcntl.flock`` on ``locks/<ticket_id>.lock``.
+
+    Shared locking primitive used by the Scheduler and the socket RPC path
+    (Invariant I-8: acquired only around state mutations, never pure reads).
+    The kernel releases the lock if the process dies; stale *files* are
+    reaped by :func:`reap_stale_locks` on boot.
+    """
+    path = Path(lock_dir) / f"{ticket_id}.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield path
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def reap_stale_locks(lock_dir: str | Path) -> int:

@@ -325,3 +325,54 @@ def test_invoke_action_unknown_action_over_socket(framework: Path) -> None:
         rt.close()
     finally:
         server.stop()
+
+
+def test_parallel_socket_transitions_serialize(framework: Path) -> None:
+    """CMP-01: socket RPC transitions take the ticket lock (I-8).
+
+    Two concurrent transition calls on the same ticket must serialize under
+    ``locks/<id>.lock``; the final state must be one of the two legal
+    outcomes with a well-formed state.json (no torn write).
+    """
+    import threading
+
+    server = RuntimeServer(framework, RuntimeConfig(worker_concurrency=1))
+    try:
+        server.start()
+        from tessera import Runtime
+
+        rt = Runtime.connect(repo=framework)
+        # Drive parallel transitions from a legal starting state.
+        rt.transition("T-1", "initialized")
+        results: list[tuple[str, str]] = []
+        errors: list[Exception] = []
+
+        def _go(to_status: str) -> None:
+            try:
+                results.append((to_status, rt.transition("T-1", to_status)))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=_go, args=("ready",)),
+            threading.Thread(target=_go, args=("completed",)),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        rt.close()
+
+        # At least one transition must have succeeded; the other may have been
+        # rejected (illegal from the serialized final state) — never a torn
+        # state.json.
+        assert len(results) >= 1, f"both transitions failed: {errors}"
+        state_path = framework / REPO_DIR_NAME / "T-1.ticket" / "state.json"
+        import json
+
+        final = json.loads(state_path.read_text())
+        assert final["status"] in ("ready", "completed")
+        assert "updated_at" in final
+    finally:
+        server.stop()

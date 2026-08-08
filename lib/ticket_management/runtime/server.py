@@ -200,6 +200,7 @@ class RuntimeServer:
         if method == "transition":
             if self.pipeline is None:
                 raise RuntimeError("runtime not initialized")
+            from lib.ticket_management.runtime.scheduler import ticket_lock
             from lib.ticket_management.runtime.state import TransitionError, transition
 
             ticket_id = params.get("ticket_id")
@@ -207,19 +208,25 @@ class RuntimeServer:
             ticket_dir = self.root / "TicketsRepository" / f"{ticket_id}.ticket"
             state_path = ticket_dir / "state.json"
             activity_path = ticket_dir / "activity.jsonl"
-            current = _load_state(state_path)
-            try:
-                result = transition(
-                    ticket_id=ticket_id,
-                    from_status=current,
-                    to_status=status,
-                    registry=None,
-                    reason=params.get("reason"),
-                    activity_path=activity_path,
-                )
-            except TransitionError as exc:
-                raise RuntimeError(f"transition rejected: {exc}") from exc
-            _write_state(state_path, result.state)
+            lock_dir = self.pipeline.lock_dir or (
+                self.root / "TicketsRepository" / ".ticket-runtime" / "locks"
+            )
+            # Invariant I-8: the state mutation runs under the ticket lock so
+            # the socket path serializes with scheduler-driven mutations.
+            with ticket_lock(lock_dir, ticket_id):
+                current = _load_state(state_path)
+                try:
+                    result = transition(
+                        ticket_id=ticket_id,
+                        from_status=current,
+                        to_status=status,
+                        registry=None,
+                        reason=params.get("reason"),
+                        activity_path=activity_path,
+                    )
+                except TransitionError as exc:
+                    raise RuntimeError(f"transition rejected: {exc}") from exc
+                _write_state(state_path, result.state)
             return {"ticket_id": ticket_id, "to_status": result.to_status.value}
         if method == "invoke_action":
             if self.pipeline is None:
