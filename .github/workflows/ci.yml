@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Show version
+        run: echo "Tessera $(python3 -c "import re,pathlib;print(re.search(r'version\s*=\s*\"([^\"]+)\"',pathlib.Path('pyproject.toml').read_text()).group(1))")"
+
+      # 1. dist/ must be consistent with the single sources of truth.
+      #    Fails if anyone hand-edits a derived copy under dist/ instead of the root.
+      - name: Check dist/ is not stale (single-source-of-truth gate)
+        run: make check-dist
+
+      # 2. The framework test suite must be green.
+      - name: Run test suite
+        run: make test
+
+      # 3. Post-install E2E smoke (boot runtime, hook fires, TESSERA_TICKET_ID set).
+      - name: Post-install E2E smoke test
+        run: uv run python e2e/smoke_test.py

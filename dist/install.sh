@@ -20,7 +20,7 @@ TARBALL_NAME="tessera-1.0.0.tar.gz"
 #   sha256sum dist/tessera-1.0.0.tar.gz | awk '{print $1}'
 # then substitute it below. Shipping with the placeholder makes every install
 # fail closed at the verification phase (by design).
-EXPECTED_SHA256="e66f527ea0fd4b6b642eb4f7bf51d5b98b5a36753eaa2e1190bfb333f3a012fc"
+EXPECTED_SHA256="4110bd7ce017ad9dcb9781136019f2a6c1a2ac2f94e9489cb9edfedc3b93be96"
 
 TESSERA_VERSION="1.0.0"
 
