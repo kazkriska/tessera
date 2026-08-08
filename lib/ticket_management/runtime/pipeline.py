@@ -163,6 +163,7 @@ class Pipeline:
             ticket_root=ticket_root,
             config=self.config,
             event_payload=event.data,
+            action_name=hook_name,
         )
 
     def _resolve_hook_descriptor(

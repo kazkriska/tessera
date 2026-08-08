@@ -260,12 +260,20 @@ class RuntimeServer:
                 retry=descriptor.retry or 0,
                 **{"async": descriptor.is_async},
             )
-            result = run_hook(
-                descriptor=runner,
-                ticket_root=ticket_dir,
-                config=self.config,
-                permissions=manifest.permissions,
+            # RFC-0006:19: the same action must not run twice concurrently;
+            # different actions on the same ticket stay concurrent.
+            from lib.ticket_management.runtime.scheduler import action_lock
+
+            lock_dir = self.pipeline.lock_dir or (
+                self.root / "TicketsRepository" / ".ticket-runtime" / "locks"
             )
+            with action_lock(lock_dir, ticket_id, action):
+                result = run_hook(
+                    descriptor=runner,
+                    ticket_root=ticket_dir,
+                    config=self.config,
+                    permissions=manifest.permissions,
+                )
             return {
                 "ticket_id": ticket_id,
                 "action": action,
