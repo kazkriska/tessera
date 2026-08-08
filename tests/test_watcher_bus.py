@@ -218,3 +218,71 @@ def test_watcher_watches_nested_ticket_dirs(tmp_path: Path):
         and str(e.data.get("path", "")).endswith("asset.txt")
         for e in received
     )
+
+
+def test_watch_rules_fire_declared_trigger(tmp_path: Path):
+    """CMP-10: a manifest watch rule fires its declared trigger."""
+    ticket_root = tmp_path / "TicketsRepository" / "HQ_BR-001.ticket"
+    assets = ticket_root / "task" / "assets"
+    assets.mkdir(parents=True)
+    (ticket_root / "MANIFEST.yaml").write_text(
+        "apiVersion: ticket/v1\n"
+        "kind: Ticket\n"
+        "metadata:\n"
+        "  id: HQ_BR-001\n"
+        "  title: Watch rule test\n"
+        "  type: task\n"
+        "watch:\n"
+        "  - path: task/assets/**\n"
+        "    trigger: asset_indexed\n",
+        encoding="utf-8",
+    )
+    (assets / "logo.png").write_text("PNG", encoding="utf-8")
+
+    received: list[Event] = []
+    w = FsWatcher()
+    w.watch(str(tmp_path), EventBus(), RuntimeConfig())
+    w._on_fs_event(str(assets / "logo.png"), "modify", received.append)
+    w._flush(received.append)
+
+    names = {e.name for e in received if e.ticket_id == "HQ_BR-001"}
+    assert "asset_indexed" in names, f"declared trigger missing: {names}"
+
+
+def test_watch_rules_cache_refreshed_on_manifest_change(tmp_path: Path):
+    """CMP-10: editing MANIFEST.yaml invalidates the cached watch rules."""
+    ticket_root = tmp_path / "TicketsRepository" / "HQ_BR-002.ticket"
+    ticket_root.mkdir(parents=True)
+    (ticket_root / "MANIFEST.yaml").write_text(
+        "apiVersion: ticket/v1\n"
+        "kind: Ticket\n"
+        "metadata:\n"
+        "  id: HQ_BR-002\n"
+        "  title: Cache test\n"
+        "  type: task\n",
+        encoding="utf-8",
+    )
+
+    w = FsWatcher()
+    w.watch(str(tmp_path), EventBus(), RuntimeConfig())
+
+    assert w._manifest_rules("HQ_BR-002") == []
+
+    # Add a rule and touch MANIFEST.yaml — the cache must reload.
+    (ticket_root / "MANIFEST.yaml").write_text(
+        "apiVersion: ticket/v1\n"
+        "kind: Ticket\n"
+        "metadata:\n"
+        "  id: HQ_BR-002\n"
+        "  title: Cache test\n"
+        "  type: task\n"
+        "watch:\n"
+        "  - path: data/**\n"
+        "    trigger: data_updated\n",
+        encoding="utf-8",
+    )
+    w._on_fs_event(str(ticket_root / "MANIFEST.yaml"), "modify", lambda e: None)
+
+    rules = w._manifest_rules("HQ_BR-002")
+    assert len(rules) == 1
+    assert rules[0]["trigger"] == "data_updated"

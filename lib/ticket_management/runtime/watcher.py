@@ -11,11 +11,12 @@ The mapping, ownership, and debounce helpers are unit-tested in
 
 from __future__ import annotations
 
+import fnmatch
 import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from inotify_simple import flags as _IN
 
@@ -74,6 +75,7 @@ class FsWatcher:
     _thread: threading.Thread | None = None
     _inotify = None  # inotify_simple.INotify once watch() runs
     _wd_to_path: dict[int, str] = field(default_factory=dict)
+    _watch_rules: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ #
     # Path mapping
@@ -82,6 +84,70 @@ class FsWatcher:
         """Map a changed file path to a domain event trigger name."""
         name = changed_path.name.lower()
         return _TRIGGER_MAP.get(name, "fs.changed")
+
+    def _manifest_rules(self, ticket_id: str) -> list[dict[str, Any]]:
+        """Load the ticket's declared ``watch:`` rules (cached).
+
+        The rules come from ``MANIFEST.yaml`` (already validated by the
+        manifest loader, including the circular-watch guard). The cache is
+        invalidated whenever the manifest itself changes.
+        """
+        if ticket_id in self._watch_rules:
+            return self._watch_rules[ticket_id]
+        rules: list[dict[str, Any]] = []
+        try:
+            from lib.ticket_management.runtime.manifest import load_manifest
+
+            if self.repo_path is not None:
+                manifest_path = (
+                    Path(self.repo_path)
+                    / "TicketsRepository"
+                    / f"{ticket_id}.ticket"
+                    / "MANIFEST.yaml"
+                )
+                if manifest_path.is_file():
+                    manifest = load_manifest(
+                        manifest_path, ticket_id=ticket_id
+                    )
+                    rules = list(manifest.watch or [])
+        except Exception:  # noqa: BLE001 — watcher must never die on a bad manifest
+            rules = []
+        self._watch_rules[ticket_id] = rules
+        return rules
+
+    def _rule_triggers_for_path(
+        self, changed_path: Path, ticket_id: str
+    ) -> list[str]:
+        """Return declared trigger names whose ``watch.path`` matches.
+
+        Rule paths are relative to the ticket root (e.g. ``assets/**``).
+        A change to a nested asset fires the rule's trigger in addition to
+        the default mapping (which stays ``fs.changed`` for unknown files).
+        """
+        if not self._manifest_rules(ticket_id):
+            return []
+        ticket_root = (
+            Path(self.repo_path)
+            / "TicketsRepository"
+            / f"{ticket_id}.ticket"
+        )
+        try:
+            rel = changed_path.resolve().relative_to(ticket_root.resolve())
+        except ValueError:
+            return []
+        rel_str = rel.as_posix()
+        triggers: list[str] = []
+        for rule in self._manifest_rules(ticket_id):
+            pattern = str(rule.get("path", "")).strip().lstrip("/")
+            if not pattern:
+                continue
+            if fnmatch.fnmatch(rel_str, pattern) or fnmatch.fnmatch(
+                rel_str, f"{pattern.rstrip('/')}/*"
+            ):
+                trigger = rule.get("trigger") or "fs.changed"
+                if trigger not in triggers:
+                    triggers.append(trigger)
+        return triggers
 
     def _owning_ticket_id(self, changed_path: Path) -> str | None:
         """Walk up from *changed_path* until a ``*.ticket`` directory is found."""
@@ -105,20 +171,36 @@ class FsWatcher:
         ticket_id = self._owning_ticket_id(changed_path)
         if ticket_id is None:
             return
-        key = f"{ticket_id}:{trigger}"
-        event = Event(name=trigger, ticket_id=ticket_id, data={"path": str(changed_path), "change": change_type})
-        with self._lock:
-            if self._pending is None:
-                self._pending = {}
-            bucket = self._pending.get(key, [])
-            bucket.append(event)
-            self._pending[key] = bucket
-            # (Re)start flush timer
-            if self._flush_timer is not None:
-                self._flush_timer.cancel()
-            self._flush_timer = threading.Timer(self._debounce_window, self._flush, args=(handler,))
-            self._flush_timer.daemon = True
-            self._flush_timer.start()
+
+        # Manifest watch rules (CMP-10): a declared rule adds its trigger
+        # alongside the default mapping; a manifest change also refreshes
+        # the cached rules.
+        if changed_path.name.upper() == "MANIFEST.YAML":
+            self._watch_rules.pop(ticket_id, None)
+        rule_triggers = self._rule_triggers_for_path(changed_path, ticket_id)
+        triggers = list(dict.fromkeys([trigger, *rule_triggers]))
+
+        for trig in triggers:
+            key = f"{ticket_id}:{trig}"
+            event = Event(
+                name=trig,
+                ticket_id=ticket_id,
+                data={"path": str(changed_path), "change": change_type},
+            )
+            with self._lock:
+                if self._pending is None:
+                    self._pending = {}
+                bucket = self._pending.get(key, [])
+                bucket.append(event)
+                self._pending[key] = bucket
+                # (Re)start flush timer
+                if self._flush_timer is not None:
+                    self._flush_timer.cancel()
+                self._flush_timer = threading.Timer(
+                    self._debounce_window, self._flush, args=(handler,)
+                )
+                self._flush_timer.daemon = True
+                self._flush_timer.start()
 
     def _flush(self, handler: Callable[[Event], None]) -> None:
         """Emit the latest event per key and clear the pending map."""
