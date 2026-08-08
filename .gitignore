@@ -1,5 +1,5 @@
 # Vendored spec reference (separate upstream repo — never commit)
-tessera-docs/
+formal-specifications/
 
 # Disposable runtime state (Invariant I-2 / I-5)
 .ticket-runtime/
