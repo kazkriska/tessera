@@ -18,6 +18,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -154,11 +155,15 @@ class Scheduler:
         registry: Any = None,
         runner: Callable[..., Any] | None = None,
         lock_dir: str | Path | None = None,
+        bus: Any = None,
     ) -> None:
         self.config = config or RuntimeConfig()
         self.registry = registry
         # runner(ticket_id, descriptor, ticket_root, config, event_payload) -> result
         self.runner = runner
+        # EventBus (optional): used to emit ticket.action.failed on retry
+        # exhaustion (RFC-0006 audit trail).
+        self.bus = bus
         self._queues: dict[str, list[ScheduledJob]] = {}
         self._lock = threading.Lock()
         self._pending: dict[tuple[str, str], ScheduledJob] = {}
@@ -342,13 +347,9 @@ class Scheduler:
                         exc,
                     )
                     if attempt > retries:
-                        return {
-                            "ticket_id": job.ticket_id,
-                            "run": job.run,
-                            "failed": True,
-                            "attempts": attempt,
-                            "error": str(exc),
-                        }
+                        return self._record_failure(
+                            job, attempt, str(exc), "retries exhausted"
+                        )
                     # Backoff between attempts (RFC-0006:24): exponential
                     # 2^(attempt-1) * base, interruptible by shutdown so
                     # shutdown(wait=True) is never blocked for the full
@@ -363,13 +364,9 @@ class Scheduler:
                                 job.ticket_id,
                                 job.run,
                             )
-                            return {
-                                "ticket_id": job.ticket_id,
-                                "run": job.run,
-                                "failed": True,
-                                "attempts": attempt,
-                                "error": "shutdown during backoff",
-                            }
+                            return self._record_failure(
+                                job, attempt, "shutdown during backoff", "aborted"
+                            )
         finally:
             # The debounce key lives until the job fully completes; only then
             # may a fresh event for the same (ticket_id, run) enqueue again.
@@ -386,6 +383,62 @@ class Scheduler:
         if attempt <= 0 or base <= 0:
             return 0.0
         return base * (2 ** (attempt - 1))
+
+    def _record_failure(
+        self, job: ScheduledJob, attempts: int, error: str, reason: str
+    ) -> dict[str, Any]:
+        """Persist the failure and emit ``ticket.action.failed``.
+
+        RFC-0006 audit trail: an exhausted retry (or an abort) appends an
+        ``activity.jsonl`` record and publishes a bus event so subscribers
+        (and the audit log) see the action never completed. Never raises —
+        auditing must not mask the underlying failure.
+        """
+        result: dict[str, Any] = {
+            "ticket_id": job.ticket_id,
+            "run": job.run,
+            "failed": True,
+            "attempts": attempts,
+            "error": error,
+            "reason": reason,
+        }
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "ticket_id": job.ticket_id,
+            "run": job.run,
+            "action": job.action_name or job.run,
+            "event": "ticket.action.failed",
+            "attempts": attempts,
+            "error": error,
+            "reason": reason,
+        }
+        try:
+            from lib.ticket_management.models import append_activity
+
+            append_activity(job.ticket_root / "activity.jsonl", record)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "scheduler: failed to append activity record for %s/%s",
+                job.ticket_id,
+                job.run,
+            )
+        if self.bus is not None:
+            try:
+                from lib.ticket_management.runtime.bus import Event
+
+                self.bus.publish(
+                    Event(
+                        name="ticket.action.failed",
+                        ticket_id=job.ticket_id,
+                        data=record,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "scheduler: failed to publish ticket.action.failed for %s",
+                    job.ticket_id,
+                )
+        return result
 
     def _wait_for_dependencies(self, job: ScheduledJob) -> None:
         """Block until all ``depends_on`` tickets are ``completed`` (or the
