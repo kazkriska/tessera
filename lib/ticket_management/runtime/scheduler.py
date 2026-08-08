@@ -207,8 +207,9 @@ class Scheduler:
             # pending key lives until the job completes, and _last_seen
             # extends the window past completion, so rapid re-enqueues of the
             # same (ticket_id, run) collapse to one execution.
+            queue_key = self._queue_key(job)
             if key in self._pending or now - self._last_seen.get(key, 0.0) < window:
-                queue = self._queues.get(ticket_id)
+                queue = self._queues.get(queue_key)
                 if queue:
                     for i, existing in enumerate(queue):
                         if existing.run == job.run:
@@ -219,9 +220,9 @@ class Scheduler:
 
             self._pending[key] = job
             self._last_seen[key] = now
-            self._queues.setdefault(ticket_id, []).append(job)
+            self._queues.setdefault(queue_key, []).append(job)
 
-        self._ensure_queue_worker(ticket_id)
+        self._ensure_queue_worker(queue_key)
 
     def shutdown(self, wait: bool = True) -> None:
         """Stop accepting work and drain the pool.
@@ -240,38 +241,53 @@ class Scheduler:
     # ------------------------------------------------------------------ #
     # Internal
     # ------------------------------------------------------------------ #
-    def _ensure_queue_worker(self, ticket_id: str) -> None:
+    def _queue_key(self, job: ScheduledJob) -> str:
+        """Resolve the queue key per CONTRACTS.md §6.
+
+        Priority order: the Ticket's declared ``workspace`` (from
+        ``metadata.json``), else the Ticket's own id. Within a queue
+        hooks/actions run sequentially; across queues they run
+        concurrently — so tickets sharing a workspace serialize, while
+        workspace-less tickets keep per-ticket parallelism.
+        """
+        metadata = self._load_metadata(job.ticket_root)
+        workspace = metadata.get("workspace")
+        if workspace:
+            return f"ws:{workspace}"
+        return job.ticket_id
+
+    def _ensure_queue_worker(self, queue_key: str) -> None:
         with self._workers_lock:
-            if ticket_id in self._queue_workers:
+            if queue_key in self._queue_workers:
                 return
             thread = threading.Thread(
                 target=self._drain_queue,
-                args=(ticket_id,),
-                name=f"sched-{ticket_id}",
+                args=(queue_key,),
+                name=f"sched-{queue_key[:24]}",
                 daemon=True,
             )
-            self._queue_workers[ticket_id] = thread
+            self._queue_workers[queue_key] = thread
             thread.start()
 
-    def _drain_queue(self, ticket_id: str) -> None:
-        # Exit only when this ticket's queue is empty. Shutdown sets the
+    def _drain_queue(self, queue_key: str) -> None:
+        # Exit only when this queue is empty. Shutdown sets the
         # stopping flag but workers keep draining whatever was enqueued
         # before shutdown (shutdown() joins them).
         while True:
             with self._lock:
-                queue = self._queues.get(ticket_id)
+                queue = self._queues.get(queue_key)
                 if not queue:
-                    self._queues.pop(ticket_id, None)
+                    self._queues.pop(queue_key, None)
                     with self._workers_lock:
-                        self._queue_workers.pop(ticket_id, None)
+                        self._queue_workers.pop(queue_key, None)
                     return
                 job = queue.pop(0)
                 if not queue:
-                    self._queues.pop(ticket_id, None)
+                    self._queues.pop(queue_key, None)
 
-            # Per-ticket sequential: wait for this job to finish before
-            # dequeuing the next. Cross-ticket parallelism comes from each
-            # ticket having its own queue worker; the pool caps total
+            # Per-queue sequential: wait for this job to finish before
+            # dequeuing the next. Cross-queue parallelism comes from each
+            # queue having its own worker; the pool caps total
             # concurrency at config.worker_concurrency.
             future = self._pool.submit(self._run_job, job)
             future.result()
