@@ -22,6 +22,7 @@ Escalation (Part IX §4.3) requires an explicit static grant in the manifest
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -31,6 +32,7 @@ __all__ = [
     "effective_permissions",
     "enforce",
     "escalate",
+    "record_approval_request",
 ]
 
 #: Capabilities that are exact-match only (no colon scope).
@@ -361,3 +363,36 @@ def enforce(
 
     else:
         raise PermissionError(f"unknown action {action!r}")
+
+
+def record_approval_request(
+    cache_dir: str | Path,
+    ticket_id: str,
+    action: str,
+    reason: str = "",
+) -> Path:
+    """Persist one escalation approval request into the cache directory.
+
+    CONTRACTS §5 ``approval_cache_path``: requests land as
+    ``<cache_dir>/<ticket_id>.<action>.<timestamp>.json`` so an operator
+    or approval gate can find them. The runtime resolves the cache dir at
+    boot (``pipeline.approval_cache_dir``); this helper only writes.
+    """
+    import json
+    import time as _time
+    import uuid as _uuid
+
+    target = Path(cache_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    record = {
+        "id": _uuid.uuid4().hex,
+        "ticket_id": ticket_id,
+        "action": action,
+        "reason": reason,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "status": "pending",
+    }
+    stamp = _time.strftime("%Y%m%dT%H%M%S", _time.gmtime())
+    path = target / f"{ticket_id}.{action}.{stamp}.json"
+    path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    return path
