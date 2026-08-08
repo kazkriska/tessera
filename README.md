@@ -32,24 +32,26 @@ Everything is configured from one optional file: `.ticket-runtime/config.yaml`
 ## Quick start
 
 ```bash
-# 1. Install (Python >= 3.12 required)
-uv venv
-uv pip install -e ".[dev]"
+# 1. Install — end users (no source checkout):
+curl -fsSL https://github.com/kazkriska/tessera-v1/releases/download/v1.0.0/install.sh | bash
+
+#    Contributors working from a checkout instead use the editable install:
+#      uv venv && uv pip install -e ".[dev]"
 
 # 2. Create a repository (scaffolds TicketsRepository/ + .ticket-runtime/)
-uv run tessera repo init .
+tessera repo init .
 
 # 3. Create a ticket
-uv run tessera create HQ_BR-010 --type task
+tessera create HQ_BR-010 --type task
 
 # 4. Start the runtime daemon (watcher + scheduler + socket RPC)
-uv run tessera runtime start
+tessera runtime start
 
 # 5. Drive it
-uv run tessera inspect HQ_BR-010
-uv run tessera transition HQ_BR-010 running
-uv run tessera action HQ_BR-010 my-action
-uv run tessera log HQ_BR-010
+tessera inspect HQ_BR-010
+tessera transition HQ_BR-010 running
+tessera action HQ_BR-010 my-action
+tessera log HQ_BR-010
 ```
 
 > `ticket` and `tessera` are both installed as console scripts (same CLI).
@@ -83,7 +85,7 @@ uv run tessera log HQ_BR-010
 ```bash
 uv venv
 uv pip install -e ".[dev]"
-uv run pytest          # full suite (currently 160 tests)
+uv run pytest          # full suite (currently 164 tests)
 ```
 
 ## Repository layout

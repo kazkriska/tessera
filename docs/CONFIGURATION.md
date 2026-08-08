@@ -46,7 +46,7 @@ registry_path: registry.db   # ticket registry database
 - **Malformed values** fall back to the field default with a warning; boot
   never fails on a bad config (runtime state is disposable).
 
-## Behavior notes (verified on v0.1.0)
+## Behavior notes (verified on v1.0.0)
 
 - `log_level` / `log_path` configure the runtime's own logger at boot
   (CMP-07). The daemon also writes `logs/runtime.log` by default.

@@ -8,7 +8,7 @@ Part XI (SDK Architecture) / RFC-0010. Two modes:
   (framed JSON lines). Raises :class:`RuntimeNotRunning` when the socket is
   absent.
 
-The CLI (``lib/ticket_management/cli.py``) wraps this same client — there is
+The CLI (``src/tessera_runtime/cli.py``) wraps this same client — there is
 no duplicated logic (Part XI §4.4).
 """
 
