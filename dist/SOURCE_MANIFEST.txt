@@ -1,0 +1,40 @@
+# Tessera v1 — dist/ source manifest
+#
+# The shippable source tree: runtime engine (src/tessera_runtime), SDK
+# (src/tessera_sdk), build metadata, locked dependencies, license, and the
+# standalone end-to-end smoke test. Verify with:
+#     cd dist && sha256sum -c <(grep -v '^#' SOURCE_MANIFEST.txt)
+#
+# Excluded by design: tests/, docs/, formal-specifications/, TicketsRepository/,
+# .ticket-runtime/, .worktrees/, .hermes/, .venv/, __pycache__/, *.pyc.
+# files: 29
+
+9f37bdb9735ed7f3251b68934859fbb0769c0d5aa4527a47abc2bbbac4ee2cab  LICENSE
+3556db72d93689297be0f9a7b2802277080a846d40f1816fd71a3ad3cd9f597a  README.md
+0616eaaf9a88e7717dacdaf067ed2d18a58ace0179c3ca0f283b6b1465956c24  e2e/smoke_test.py
+9c6d29f39765714d6fad327db1cbc43c0d33a4d4d76bf676e90f43192f10d25e  pyproject.toml
+4a6830d8c38314dac416ff6cf487c76eab4456a53db846c3517ea5f0ab21dffe  src/tessera_runtime/__init__.py
+0101f5b4677ebf66cf5bf9b05f1645917f580c4e7ec4567fe5815b9ad69e3e02  src/tessera_runtime/cli.py
+8843bbd0712494576773f7467647129260997d8d411bfa70b99dfae1e5601b9a  src/tessera_runtime/config.py
+ef13bc1cebaf6abcf9cf6a7669b5932606b4cc5f0e7540c2be56ed6d10f0f731  src/tessera_runtime/models.py
+b4fb0fb88fe9996ed20cb64628a7b3bc641ada6d8884ab3dd0e04b213ea84358  src/tessera_runtime/plugins/__init__.py
+4718ecf718a6547616a6680ac2ff733668dcca5461fc1af91625237c6f92c8b3  src/tessera_runtime/plugins/bash_runner.py
+6a3c6aa8bf64274e6beb21b79753ed5ef983c80d3d106ad105158ce83a855f9b  src/tessera_runtime/plugins/node_runner.py
+677ef81105017b1dd789d434cd70d11cad341bcfa8a6865705bdc838c35af4e4  src/tessera_runtime/plugins/python_runner.py
+1258e217e519f921e4993ab1ef5214c27ffa0f42a03d7eb4ea19a04ca371f193  src/tessera_runtime/relationships.py
+3b11f2af726fdc48fe4fd7d99e1e2f495d0d7721ff2d9dfc427699d16a0482b6  src/tessera_runtime/repo.py
+4c86d9d7ef09bca614fc08e51c261cf00559dc99fc25af164f02225e1a96f4b9  src/tessera_runtime/runtime/__init__.py
+59a90504c0cc67d8fe57d1cc24715e1f00cbc54e01eb0a2a7f33235f3495ef34  src/tessera_runtime/runtime/bus.py
+4c10770b669667a039cfdcaae29c1f453ff711762e3f4f0187b0c1733ac5b47e  src/tessera_runtime/runtime/dispatcher.py
+a5a78d2909c39f5909bfeb7ba348eb0959eadc1fe98c03c8aba91e39f373af31  src/tessera_runtime/runtime/env.py
+f9c4ee2e68346ffa179a10d8bf7372583bbdf56a523292454e866d42d984c899  src/tessera_runtime/runtime/executor.py
+ed6223967b57b85440e1962af71c13857877e379b195bdb2704d631110fa0b3d  src/tessera_runtime/runtime/manifest.py
+29e60b77872008e82ad2878413516cb75c209fd902759124089af0b9cb94cecd  src/tessera_runtime/runtime/permissions.py
+bb74c4db6a57bb041b824dbdc73291849d22f35e8fabbfa7e0a74d60b79a871a  src/tessera_runtime/runtime/pipeline.py
+4733037447a6b2c036592db04a2bb4c014cb8e6b708f78c851f1fbec613cebc3  src/tessera_runtime/runtime/registry.py
+a300e8e41ddb032ed7004216eda7d911e7021a4cb7403416dfd82b3707e1296a  src/tessera_runtime/runtime/scheduler.py
+de58fc5b9d8eb3d2c3860b44a4e4d1305569d2ead67ecb94c60356f011fa7dfe  src/tessera_runtime/runtime/server.py
+d728f8823cf348749330969a2b7069e4eddf8d6f74eafdca324771990c0c026a  src/tessera_runtime/runtime/state.py
+5b84258a736f803b3b56c3a35656bc3a77a971d9ed5886d1f9134c84226a73b8  src/tessera_runtime/runtime/watcher.py
+0c8e6a8348a39138eda2cad0015b1e5041ba207e94efcd333e594c17fe56dc33  src/tessera_sdk/__init__.py
+5161985a810de7f00f6eed4c54452678dd5a370d66a076db1c7dd0037e24e561  uv.lock
