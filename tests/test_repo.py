@@ -44,9 +44,17 @@ def test_get_repo_root_finds_framework_root(tmp_path: Path):
     assert found == tmp_path.resolve()
 
 
-def test_get_repo_root_raises_when_missing(tmp_path: Path):
-    with pytest.raises(RuntimeError):
-        get_repo_root(tmp_path)
+def test_get_repo_root_falls_back_to_canonical_prefix(tmp_path: Path):
+    # With the canonical-prefix model (dev/v1), once `repo init` has written
+    # the root marker at DEFAULT_PREFIX, `get_repo_root` from any directory
+    # that is not inside another repo resolves to the canonical prefix
+    # (rather than raising). The fallback only fires when the marker exists.
+    from tessera_runtime.repo import DEFAULT_PREFIX, repo_init, write_root_marker
+
+    repo_init(DEFAULT_PREFIX)  # creates dirs
+    write_root_marker(DEFAULT_PREFIX)  # writes the marker (what `repo init` CLI does)
+    found = get_repo_root(tmp_path)
+    assert found == DEFAULT_PREFIX
 
 
 def test_rescan_builds_registry_and_index(tmp_path: Path):

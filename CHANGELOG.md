@@ -94,8 +94,16 @@ implemented **and** verified (local build / smoke test / `systemd-analyze`).
 - The systemd path requires a space-free `tessera` binary (production uses
   the `~/.local/bin/tessera` symlink). The direct-daemon fallback covers
   space-containing dev paths.
-- `tessera runtime reset` (disable unit + remove marker, keep tickets) is
-  still deferred.
+- **`tessera runtime reset`** — tears down the runtime wiring (stops the
+  daemon, disables + removes the systemd unit and its `default.target.wants`
+  symlink, deletes the root marker) while **preserving tickets and
+  `registry.db`**. Defaults to `DEFAULT_PREFIX` (where `repo init` installs
+  the daemon) rather than cwd-walk, so a plain `reset` can't accidentally
+  target an unrelated local repo. Confirmation prompt unless `--yes`.
+- **`Runtime.connect`** now probes the running server's `status` RPC to learn
+  the repo root (the socket no longer encodes the root after the
+  XDG_RUNTIME_DIR move); uses a bare AF_UNIX JSON-RPC probe (`_probe_root`)
+  because `Runtime.__init__` requires a repo.
 - CONTRACTS.md §7.1 still says the socket is under `.ticket-runtime/`; that
   doc should be updated to reflect the XDG_RUNTIME_DIR socket location
   (tracked, not yet edited on this branch).
