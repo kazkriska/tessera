@@ -73,14 +73,21 @@ two-package source layout:
 
 ## systemd user unit
 
-The installer registers a **user-scope** systemd unit template,
-`~/.config/systemd/user/tessera-runtime@.service`. Because it is a *user*
-unit, it runs without root and starts/stop on a per-user basis:
+The runtime is supervised by a **non-template** systemd user unit,
+`~/.config/systemd/user/tessera-runtime.service`. Its `WorkingDirectory=` and
+`TESSERA_REPO=` are **hardcoded to the canonical repo path** (the prefix's
+`TicketsRepository/`) by `tessera repo init`.
+
+> **dev/v1 change:** the unit is no longer written by the installer. The
+> first `tessera repo init` (or an explicit `tessera runtime enable`) generates
+> it. This is an experimental branch and is not part of a release tarball yet.
+
+Bring it up after init:
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now tessera-runtime@<workspace>.service
-journalctl --user -u tessera-runtime@<workspace>.service -f
+systemctl --user enable --now tessera-runtime.service
+journalctl --user -u tessera-runtime.service -f
 ```
 
 (Enable lingering with `loginctl enable-linger $USER` if you want it to run
@@ -155,10 +162,10 @@ script, extraction dir, E2E outputs). It never deletes the installed app. To
 fully remove Tessera v1 from a box, delete the user-scoped artifacts:
 
 ```bash
-systemctl --user disable --now 'tessera-runtime@*.service' 2>/dev/null
+systemctl --user disable --now tessera-runtime.service 2>/dev/null
 rm -rf ~/.local/share/tessera
 rm -f  ~/.local/bin/tessera ~/.local/bin/ticket
-rm -f  ~/.config/systemd/user/tessera-runtime@.service
+rm -f  ~/.config/systemd/user/tessera-runtime.service
 systemctl --user daemon-reload
 ```
 
