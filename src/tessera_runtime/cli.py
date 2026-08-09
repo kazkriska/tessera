@@ -264,9 +264,24 @@ def completion_install(
     dest.write_text(script, encoding="utf-8")
     dest.chmod(0o644)
     typer.echo(f"wrote zsh completion to {dest}")
-    typer.echo("add this to your ~/.zshrc (or source it):")
-    typer.echo(f"  fpath+={zfunc_dir}")
-    typer.echo("  autoload -Uz compinit; compinit")
+    # zsh scans `fpath` (flat, non-recursive) for a `_tessera` file, so merely
+    # writing the file does nothing unless the dir is on fpath. Append the
+    # fpath line to the shell rc idempotently so completion actually works.
+    rc = Path.home() / ".zshrc"
+    fpath_line = f'fpath+={zfunc_dir}'
+    try:
+        existing = rc.read_text(encoding="utf-8") if rc.exists() else ""
+    except OSError:
+        existing = ""
+    marker = "# --- tessera completion (managed by `tessera completion install`) ---"
+    if fpath_line not in existing:
+        block = f"\n{marker}\n{fpath_line}\nautoload -Uz compinit; compinit\n"
+        with rc.open("a", encoding="utf-8") as fh:
+            fh.write(block)
+        typer.echo(f"appended completion setup to {rc}")
+        typer.echo("restart your shell (or `source ~/.zshrc`) to activate.")
+    else:
+        typer.echo(f"{rc} already configures fpath for tessera (no change).")
 
 
 # --------------------------------------------------------------------------- #
