@@ -93,9 +93,11 @@ def start_runtime(repo_root: str | Path) -> str:
     a unit that fails to start (e.g. 203/EXEC) triggers the direct-daemon
     fallback rather than a false "started" message.
     """
+    from tessera_runtime.runtime.server import runtime_socket_path
+
     root = Path(repo_root).resolve()
     if runtime_is_live(root):
-        return f"runtime already running (sock at {root / RUNTIME_DIR_NAME / 'runtime.sock'})"
+        return f"runtime already running (sock at {runtime_socket_path(root)})"
 
     if _systemd_available():
         unit_path = write_unit(root)

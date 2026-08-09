@@ -130,15 +130,23 @@ class Runtime:
             sock_path = Path(sock)
         else:
             root = Path(repo).resolve() if repo is not None else find_repo_root(None)
-            sock_path = root / RUNTIME_DIR_NAME / "runtime.sock"
+            from tessera_runtime.runtime.server import runtime_socket_path
+
+            sock_path = runtime_socket_path(root)
         if not sock_path.exists():
             raise RuntimeNotRunning(
                 f"runtime socket not found at {sock_path}; "
                 "start the runtime or use Runtime.direct()"
             )
         if repo is None:
+            # The socket lives under $XDG_RUNTIME_DIR/tessera/<hash>/, so its
+            # path no longer reveals the repo root. Ask the running server for
+            # its root via the `status` RPC instead of guessing from the path.
             try:
-                root = sock_path.parent.parent.resolve()
+                probe = cls(sock=sock_path)
+                status = probe._rpc("status")
+                root = Path(status["root"])
+                probe.close()
             except Exception:  # noqa: BLE001
                 root = find_repo_root(None)
         else:

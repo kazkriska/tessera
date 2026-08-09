@@ -163,10 +163,13 @@ fully remove Tessera v1 from a box, delete the user-scoped artifacts:
 
 ```bash
 systemctl --user disable --now tessera-runtime.service 2>/dev/null
-rm -rf ~/.local/share/tessera
+rm -rf ~/.local/share/tessera          # prefix: repo, venv, zfunc completions
 rm -f  ~/.local/bin/tessera ~/.local/bin/ticket
 rm -f  ~/.config/systemd/user/tessera-runtime.service
+rm -f  ~/.zfunc/_tessera                # only if you used typer's own installer
 systemctl --user daemon-reload
+# If a pre-dev/v1 stray runtime dir was left at home, remove it explicitly:
+#   tessera repo clean      # safe: refuses if a runtime looks live there
 ```
 
 ---

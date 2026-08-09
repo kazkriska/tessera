@@ -34,6 +34,7 @@ __all__ = [
     "ROOT_MARKER",
     "repo_init",
     "write_root_marker",
+    "stray_home_runtime_dir",
     "rescan",
     "get_repo_root",
 ]
@@ -60,13 +61,39 @@ def repo_init(root: str | Path) -> Path:
 
     Idempotent: calling twice is safe. ``registry.db`` is intentionally NOT
     created here — that is the Registry's job (Invariant I-9).
+
+    Guard (dev/v1): refuses to bootstrap a runtime tree directly under the
+    user's home directory (``$HOME``). The runtime state must live inside a
+    repository's ``TicketsRepository/.ticket-runtime/`` — never as a bare
+    ``~/.ticket-runtime/`` at home. A stray ``~/.ticket-runtime/`` is leftover
+    from pre-dev/v1 usage and is rejected so it cannot be re-created.
     """
     root_path = Path(root).resolve()
+    home = Path.home()
+    if root_path == home or root_path == home / RUNTIME_DIR_NAME:
+        raise RuntimeError(
+            f"refusing to initialize runtime state at {root_path}: the "
+            f"runtime tree must live under a repository's "
+            f"TicketsRepository/{RUNTIME_DIR_NAME}/, not directly under $HOME. "
+            f"Run 'tessera repo init' (canonical: {DEFAULT_PREFIX}) or pass a "
+            f"repository path."
+        )
     runtime_dir = root_path / REPO_DIR_NAME / RUNTIME_DIR_NAME
     runtime_dir.mkdir(parents=True, exist_ok=True)
     for subdir in RUNTIME_SUBDIRS:
         (runtime_dir / subdir).mkdir(parents=True, exist_ok=True)
     return root_path
+
+
+def stray_home_runtime_dir() -> Path | None:
+    """Return ``$HOME/.ticket-runtime`` if it exists as stray home state.
+
+    This is leftover from pre-dev/v1 usage (runtime state created directly
+    under home). It should be removed; the canonical location is
+    ``<repo>/TicketsRepository/.ticket-runtime/``.
+    """
+    candidate = Path.home() / RUNTIME_DIR_NAME
+    return candidate if candidate.is_dir() else None
 
 
 def write_root_marker(root: str | Path) -> Path:

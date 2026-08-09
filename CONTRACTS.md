@@ -212,6 +212,12 @@ registry_path: registry.db            # relative to .ticket-runtime/
 
 - All paths under `.ticket-runtime/` are **disposable** (Invariant I-2); deleting the file reverts
   to defaults on next boot.
+- **Exception — the runtime socket.** `runtime.sock` is NOT stored under
+  `.ticket-runtime/` (a repo-rooted socket path can exceed the ~107-byte
+  `AF_UNIX` limit for deep repos). It lives at
+  `$XDG_RUNTIME_DIR/tessera/<repo-hash>/runtime.sock` — short, ephemeral, and
+  per-repo (stable hash of the repo path). Durable state (`registry.db`, logs,
+  locks, `config.yaml`) stays in `.ticket-runtime/`.
 - `config.yaml` is the ONLY runtime-owned config; Tickets remain pure data (Charter principle 4).
 
 ---

@@ -60,17 +60,19 @@ def runtime_start(
 ) -> None:
     """Boot the runtime daemon (singleton via runtime.sock)."""
     from tessera_runtime.daemon import launch_runtime_daemon, runtime_is_live
+    from tessera_runtime.runtime.server import runtime_socket_path
 
     root = _find_root(repo)
+    sock_path = runtime_socket_path(root)
     if runtime_is_live(root):
-        typer.echo(f"error: runtime already running at {root / 'runtime.sock'}", err=True)
+        typer.echo(f"error: runtime already running at {sock_path}", err=True)
         raise typer.Exit(1)
     try:
         pid = launch_runtime_daemon(root)
     except RuntimeError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1)
-    typer.echo(f"Runtime started (pid {pid}, sock {root / '.ticket-runtime' / 'runtime.sock'})")
+    typer.echo(f"Runtime started (pid {pid}, sock {sock_path})")
 
 
 @runtime_app.command("stop")
@@ -137,7 +139,11 @@ def repo_init_cmd(
 
     root = Path(path).resolve() if path else DEFAULT_PREFIX
     typer.echo(f"→ initializing Tessera repository at {root}")
-    repo_init(root)
+    try:
+        repo_init(root)
+    except RuntimeError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
     typer.echo(f"→ created directory tree {root / 'TicketsRepository' / '.ticket-runtime'}")
 
     marker = write_root_marker(root)
@@ -191,6 +197,76 @@ def repo_scan(
     result = rescan(root)
     count = len(result["registry"].list_all()) if result.get("registry") else 0
     typer.echo(f"Scanned {root}; {count} tickets in registry.")
+
+
+@repo_app.command("clean")
+def repo_clean() -> None:
+    """Remove stray runtime state left directly under $HOME (~/.ticket-runtime).
+
+    The runtime tree must live under a repository's
+    ``TicketsRepository/.ticket-runtime/`` (or the canonical prefix). A bare
+    ``~/.ticket-runtime/`` is leftover from pre-dev/v1 usage and is NOT where
+    the daemon stores its socket. This removes it after confirming it is the
+    stray home dir and not an active runtime.
+    """
+    from tessera_runtime.repo import stray_home_runtime_dir
+
+    stray = stray_home_runtime_dir()
+    if stray is None:
+        typer.echo("no stray ~/.ticket-runtime found; nothing to clean")
+        return
+    # Refuse if a runtime appears live there (defensive — normal location is
+    # inside a repo, so this should never be an active socket).
+    sock = stray / "runtime.sock"
+    if sock.exists():
+        typer.echo(f"error: {sock} looks active — stop the runtime first", err=True)
+        raise typer.Exit(1)
+    import shutil
+
+    shutil.rmtree(stray)
+    typer.echo(f"removed stray runtime dir {stray}")
+
+
+# --------------------------------------------------------------------------- #
+# completion
+# --------------------------------------------------------------------------- #
+completion_app = typer.Typer(help="Install shell completions.")
+app.add_typer(completion_app, name="completion")
+
+
+@completion_app.command("install")
+def completion_install(
+    shell: str = typer.Option("zsh", "--shell", help="Shell: zsh (bash planned)"),
+) -> None:
+    """Write the shell completion file under the prefix, not in $HOME.
+
+    typer's own ``--install-completion`` drops ``~/.zfunc/_tessera`` in your
+    home dir. To keep all Tessera state under the prefix, this writes the
+    completion script to ``~/.local/share/tessera/zfunc/_tessera`` instead and
+    prints the ``fpath`` line you add to your shell rc.
+    """
+    if shell != "zsh":
+        typer.echo(f"error: only zsh supported on dev/v1 (got {shell!r})", err=True)
+        raise typer.Exit(1)
+    from tessera_runtime.repo import DEFAULT_PREFIX
+
+    zfunc_dir = DEFAULT_PREFIX / "zfunc"
+    zfunc_dir.mkdir(parents=True, exist_ok=True)
+    dest = zfunc_dir / "_tessera"
+    # Render typer's canonical zsh completion script (the same text typer's
+    # own installer would write to ~/.zfunc/_tessera) but land it under the
+    # prefix instead of $HOME.
+    from typer.completion import get_completion_script
+
+    script = get_completion_script(
+        prog_name="tessera", complete_var="_TESSERA_COMPLETE", shell="zsh"
+    )
+    dest.write_text(script, encoding="utf-8")
+    dest.chmod(0o644)
+    typer.echo(f"wrote zsh completion to {dest}")
+    typer.echo("add this to your ~/.zshrc (or source it):")
+    typer.echo(f"  fpath+={zfunc_dir}")
+    typer.echo("  autoload -Uz compinit; compinit")
 
 
 # --------------------------------------------------------------------------- #
