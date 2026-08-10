@@ -215,12 +215,18 @@ make dist
 
 This runs `scripts/build_dist.py build`, which:
 
-1. Regenerates the derived copies under `dist/` (`src/`, `pyproject.toml`,
-   `uv.lock`, `LICENSE`, `e2e/smoke_test.py`) from the repo-root sources of truth.
-2. Assembles `dist/tessera-<version>.tar.gz` from `dist/SOURCE_MANIFEST.txt`
-   plus the installer.
-3. Writes `dist/tessera-<version>.tar.gz.sha256`.
-4. **Injects the real SHA256 into `dist/install.sh`**, replacing the previous digest.
+1. Stages the payload under `dist/` from the repo sources of truth: `src/`,
+   `pyproject.toml`, `uv.lock`, `LICENSE`, `e2e/smoke_test.py`, plus the
+   hand-authored installer copied from `release/` (`install.sh`,
+   `install-modules/`, `README.md`). `dist/` is a **generated, git-ignored**
+   build output — none of it is committed.
+2. Derives the tarball payload from the explicit inclusion set
+   (`_PAYLOAD_INCLUDE` in `scripts/build_dist.py`: `src/`, `pyproject.toml`,
+   `uv.lock`, `LICENSE`, `README.md`, `install-modules/`, `e2e/`) filtered by
+   `.distignore`. `dist/SOURCE_MANIFEST.txt` is **generated** by this step as a
+   verification artifact (output only — never an input).
+3. Writes `dist/tessera-<version>.tar.gz` and `dist/tessera-<version>.tar.gz.sha256`.
+4. **Injects the real SHA256 into `dist/install.sh`**, replacing the build placeholder.
 
 Confirm the staging directory is self-consistent before installing:
 
@@ -234,7 +240,7 @@ not byte-reproducible across runs. Only its **self-consistency** with
 `dist/install.sh` matters here.
 
 If this reports `dist/ is STALE`, re-run `make dist` — see
-[Adding new modules](#adding-new-modules-manifest-gotcha) if it persists.
+[Adding new modules](#adding-new-modules) if it persists.
 
 ### Step 3 — Install
 
@@ -328,19 +334,15 @@ directly if you want certainty:
   "import tessera_runtime.daemon, tessera_runtime.systemd_units, tessera_sdk; print('ok')"
 ```
 
-> **Known limitation — post-install e2e smoke test (step 5/6).** The full
-> install runs `e2e/smoke_test.py`, which currently fails its
-> `on_state_updated` hook check when exercised immediately after a fresh
-> `repo init`. This is a **runtime-engine** bug, not an install-path defect:
-> the daemon's file watcher registers inotify watches at boot, but `repo init`
-> auto-starts the daemon *before* any ticket exists, so a ticket created
-> afterwards is never watched (inotify is non-recursive and the watcher does
-> not re-scan for new ticket directories). The `action` over the runtime socket
-> still passes — only the filesystem-driven hook is affected. This does **not**
-> indicate a broken build: the import check above is the authoritative
-> payload-integrity gate. Tracked separately from this install guide; the
-> watcher re-scan (`FsWatcher._watch_root`) must be wired into the Pipeline's
-> onCreate path.
+> **Post-install e2e smoke test (step 5/6).** The full install runs
+> `e2e/smoke_test.py`, which exercises the `on_state_updated` hook. The earlier
+> `dev/v1` defect where this hook stayed silent for tickets created right after
+> `repo init` (the daemon registered inotify watches before any ticket existed,
+> and never re-scanned) is **fixed** — `FsWatcher` now self-heals via
+> `_watch_root()` on new `*.ticket` dirs (commit `4108ad4`, GitHub #3, merged to
+> `dev/v1`). After a rebuild, the hook should fire and the smoke test should pass.
+> If it still fails, the authoritative payload-integrity gate is the import
+> check below — confirm the packaged modules import before trusting the build.
 
 ### Adding new modules
 

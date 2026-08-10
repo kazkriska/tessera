@@ -3,34 +3,43 @@
 build_dist.py — the single source of truth for the Tessera v1 release artifact.
 
 The framework repo root holds the *source of truth*:
-    src/                runtime engine + SDK (installed packages)
-    pyproject.toml      packaging (version lives here)
-    uv.lock             pinned dependencies
-    LICENSE             project license
-    e2e/smoke_test.py   curated end-to-end smoke test
-    dist/install.sh, dist/install-modules/   installer (hand-authored)
-    dist/README.md      user-facing README (hand-authored, differs from root)
-    dist/SOURCE_MANIFEST.txt   list of files shipped in the tarball
+    src/                     runtime engine + SDK (installed packages)
+    pyproject.toml           packaging (version lives here)
+    uv.lock                  pinned dependencies
+    LICENSE                  project license
+    e2e/smoke_test.py        curated end-to-end smoke test
+    release/install.sh, release/install-modules/, release/README.md
+                             hand-authored installer (committed under release/)
+    .distignore              safety-net exclusions for the tarball payload
 
-This script REGENERATES everything under dist/ that is derived:
-    dist/src/           <- copy of src/ (minus caches)
-    dist/pyproject.toml <- copy of pyproject.toml
-    dist/uv.lock        <- copy of uv.lock
-    dist/LICENSE        <- copy of LICENSE
-    dist/e2e/smoke_test.py <- copy of e2e/smoke_test.py
+This script STAGES everything under dist/ (a GENERATED, git-ignored build
+output — never committed):
+    dist/src/                <- copy of src/ (minus caches)
+    dist/pyproject.toml      <- copy of pyproject.toml
+    dist/uv.lock             <- copy of uv.lock
+    dist/LICENSE             <- copy of LICENSE
+    dist/e2e/smoke_test.py   <- copy of e2e/smoke_test.py
+    dist/install.sh          <- copy of release/install.sh
+    dist/install-modules/    <- copy of release/install-modules/
+    dist/README.md           <- copy of release/README.md
 
-It then assembles dist/tessera-<version>.tar.gz from the SOURCE_MANIFEST
-entries (plus the installer) and writes dist/tessera-<version>.tar.gz.sha256.
+The tarball payload is then **derived** (not read from a manifest):
+build_dist walks the explicit inclusion set (_PAYLOAD_INCLUDE) and drops
+anything matched by .distignore. dist/SOURCE_MANIFEST.txt is GENERATED as a
+verification artifact (output only).
 
-Finally it injects the real SHA256 into dist/install.sh (replacing the
-build placeholder), so the shipped bootstrap verifies against the real tarball.
+Finally it assembles dist/tessera-<version>.tar.gz and writes
+dist/tessera-<version>.tar.gz.sha256. It injects the real SHA256 into
+dist/install.sh (replacing the build placeholder), so the shipped bootstrap
+verifies against the real tarball.
 
 Modes:
-    build     regenerate dist/ + tarball + sha + install.sh digest (default)
+    build     stage dist/ + tarball + sha + install.sh digest (default)
     check     verify dist/ matches sources (no drift) WITHOUT writing;
-              exit non-zero if dist/ is stale (used by CI)
+              exit non-zero if dist/ is stale or the completeness gate fails
+              (used by CI)
 
-RFC-0013 is the authoritative spec for the manifest and installer behavior.
+RFC-0013 is the authoritative spec for the installer behavior.
 """
 from __future__ import annotations
 
