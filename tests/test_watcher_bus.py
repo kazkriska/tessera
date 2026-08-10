@@ -286,3 +286,129 @@ def test_watch_rules_cache_refreshed_on_manifest_change(tmp_path: Path):
     rules = w._manifest_rules("HQ_BR-002")
     assert len(rules) == 1
     assert rules[0]["trigger"] == "data_updated"
+
+
+# --------------------------------------------------------------------------- #
+# Late-created ticket directories (issue #3)
+# --------------------------------------------------------------------------- #
+def _wait_for(predicate, timeout: float = 5.0, interval: float = 0.05) -> bool:
+    """Poll *predicate* until true or *timeout* elapses."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(interval)
+    return False
+
+
+def test_watcher_watches_ticket_dir_created_after_boot(tmp_path: Path):
+    """Issue #3: a ticket created AFTER the runtime booted must fire triggers.
+
+    inotify is non-recursive and `watch()` only registers the directories that
+    exist at boot, so a `*.ticket` directory created later carried no watch and
+    every filesystem hook for that ticket was dead. Pre-fix this test times out
+    with zero events; post-fix the watcher self-heals on the directory CREATE.
+    """
+    tickets = tmp_path / "TicketsRepository"
+    tickets.mkdir()  # EMPTY repo at boot — exactly what `repo init` leaves
+
+    bus = EventBus()
+    received: list[Event] = []
+    bus.subscribe(handler=received.append)
+
+    w = FsWatcher()
+    w.watch(str(tmp_path), bus, RuntimeConfig())
+    w._debounce_window = 0.05
+    w.start(block=False)
+
+    try:
+        # Create the ticket directory *after* the watcher is running.
+        late = tickets / "LATE-01.ticket"
+        late.mkdir()
+
+        # The watcher must register the new directory on its own.
+        assert _wait_for(lambda: str(late) in set(w._wd_to_path.values())), (
+            "watcher never registered the late-created ticket directory"
+        )
+
+        (late / "state.json").write_text('{"status": "created"}', encoding="utf-8")
+
+        assert _wait_for(
+            lambda: any(
+                e.ticket_id == "LATE-01" and e.name == "state.updated"
+                for e in received
+            )
+        ), f"no state.updated for a late-created ticket; got {[e.name for e in received]}"
+    finally:
+        w.stop()
+
+
+def test_watcher_watches_nested_dir_created_after_boot(tmp_path: Path):
+    """Nested directories created post-boot are watched too (asset subtrees)."""
+    tickets = tmp_path / "TicketsRepository"
+    tickets.mkdir()
+
+    bus = EventBus()
+    received: list[Event] = []
+    bus.subscribe(handler=received.append)
+
+    w = FsWatcher()
+    w.watch(str(tmp_path), bus, RuntimeConfig())
+    w._debounce_window = 0.05
+    w.start(block=False)
+
+    try:
+        ticket_root = tickets / "LATE-02.ticket"
+        ticket_root.mkdir()
+        assert _wait_for(lambda: str(ticket_root) in set(w._wd_to_path.values()))
+
+        assets = ticket_root / "task" / "assets"
+        assets.mkdir(parents=True)
+        assert _wait_for(lambda: str(assets) in set(w._wd_to_path.values())), (
+            "watcher never registered the nested directory created post-boot"
+        )
+
+        (assets / "logo.png").write_text("PNG", encoding="utf-8")
+
+        assert _wait_for(
+            lambda: any(
+                e.ticket_id == "LATE-02"
+                and str(e.data.get("path", "")).endswith("logo.png")
+                for e in received
+            )
+        ), f"no event for nested asset; got {[e.data.get('path') for e in received]}"
+    finally:
+        w.stop()
+
+
+def test_watch_root_is_idempotent(tmp_path: Path):
+    """Repeated re-scans must not duplicate or leak watches."""
+    tickets = tmp_path / "TicketsRepository"
+    (tickets / "HQ_BR-003.ticket" / "task").mkdir(parents=True)
+
+    w = FsWatcher()
+    w.watch(str(tmp_path), EventBus(), RuntimeConfig())
+    try:
+        before = dict(w._wd_to_path)
+        w._watch_root()
+        w._watch_root()
+        assert w._wd_to_path == before
+    finally:
+        w.stop()
+
+
+def test_new_directory_signal_ignores_file_events(tmp_path: Path):
+    """Only directory create/move re-scans; ordinary file churn must not."""
+    ticket_root = tmp_path / "TicketsRepository" / "HQ_BR-004.ticket"
+    ticket_root.mkdir(parents=True)
+    state = ticket_root / "state.json"
+    state.write_text("{}", encoding="utf-8")
+
+    w = FsWatcher()
+    # A modified file, a created file, and a non-ticket directory: none qualify.
+    assert w._is_new_directory_event(state, "modify") is False
+    assert w._is_new_directory_event(state, "create") is False
+    assert w._is_new_directory_event(tmp_path, "create") is False
+    # A new ticket directory does qualify (create and moved_to alike).
+    assert w._is_new_directory_event(ticket_root, "create") is True
+    assert w._is_new_directory_event(ticket_root, "moved_to") is True
