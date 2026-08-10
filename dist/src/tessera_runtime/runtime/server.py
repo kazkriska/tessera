@@ -38,9 +38,17 @@ SOCKET_NAME = "runtime.sock"
 
 
 def runtime_socket_path(root: str | Path) -> Path:
-    """Absolute path of the runtime socket under ``.ticket-runtime/``."""
-    repo = repo_init(root)
-    return Path(repo) / RUNTIME_DIR_NAME / SOCKET_NAME
+    """Absolute path of the runtime socket.
+
+    The socket lives under ``$XDG_RUNTIME_DIR/tessera/<repo-hash>/`` (see
+    :mod:`tessera_runtime.socket_location`) — short enough to satisfy the
+    ~107-byte ``AF_UNIX`` path limit, ephemeral per Invariant I-2, and
+    namespaced per repo. It is intentionally NOT under ``$HOME`` or inside
+    the repo tree.
+    """
+    from tessera_runtime.socket_location import runtime_socket_path as _impl
+
+    return _impl(root)
 
 
 class RuntimeServer:

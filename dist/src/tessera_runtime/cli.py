@@ -8,6 +8,7 @@ running (Part X §8).
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -58,69 +59,20 @@ def runtime_start(
     repo: Optional[str] = typer.Option(None, "--repo", help="Framework root"),
 ) -> None:
     """Boot the runtime daemon (singleton via runtime.sock)."""
-    import subprocess
-    import sys
-
-    from tessera_runtime.repo import RUNTIME_DIR_NAME, repo_init
-    from tessera_runtime.runtime.server import _socket_is_live, runtime_socket_path
+    from tessera_runtime.daemon import launch_runtime_daemon, runtime_is_live
+    from tessera_runtime.runtime.server import runtime_socket_path
 
     root = _find_root(repo)
     sock_path = runtime_socket_path(root)
-    if sock_path.exists():
-        # Live or stale — let the server decide, but for UX, a live one is an
-        # error; a stale one will be reaped by the daemon we're about to spawn.
-        if _socket_is_live(sock_path):
-            typer.echo(f"error: runtime already running at {sock_path}", err=True)
-            raise typer.Exit(1)
-
-    repo_init(root)
-    log_dir = root / "TicketsRepository" / RUNTIME_DIR_NAME / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "runtime.log"
-
-    # Detached daemon: a fresh interpreter runs the server and blocks in
-    # wait() until `runtime stop` sends the shutdown RPC.
-    daemon_code = (
-        "import sys, signal\n"
-        "from tessera_runtime.runtime.server import RuntimeServer\n"
-        f"root = {str(root)!r}\n"
-        # No config passed: the Pipeline loads `.ticket-runtime/config.yaml`
-        # itself at boot (RFC-0004 boot step 1), so user-set values apply.
-        "srv = RuntimeServer(root)\n"
-        "def _term(*_):\n"
-        "    srv.stop()\n"
-        "signal.signal(signal.SIGTERM, _term)\n"
-        "signal.signal(signal.SIGINT, _term)\n"
-        "srv.start()\n"
-        "sys.stdout.write('READY\\n'); sys.stdout.flush()\n"
-        "srv.wait()\n"
-    )
-    proc = subprocess.Popen(
-        [sys.executable, "-c", daemon_code],
-        cwd=str(Path(__file__).resolve().parent.parent.parent),
-        stdout=open(log_file, "a"),
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    # Wait until the socket is live (or the daemon died).
-    import time
-
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        if _socket_is_live(sock_path):
-            typer.echo(f"Runtime started (sock {sock_path}, pid {proc.pid})")
-            return
-        if proc.poll() is not None:
-            typer.echo(
-                f"error: runtime daemon exited with code {proc.returncode}; "
-                f"see {log_file}",
-                err=True,
-            )
-            raise typer.Exit(1)
-        time.sleep(0.1)
-    typer.echo("error: runtime did not start within 15s", err=True)
-    raise typer.Exit(1)
+    if runtime_is_live(root):
+        typer.echo(f"error: runtime already running at {sock_path}", err=True)
+        raise typer.Exit(1)
+    try:
+        pid = launch_runtime_daemon(root)
+    except RuntimeError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Runtime started (pid {pid}, sock {sock_path})")
 
 
 @runtime_app.command("stop")
@@ -139,6 +91,59 @@ def runtime_stop(
         typer.echo("Runtime is not running.")
         raise typer.Exit(1)
     typer.echo("Runtime stopped.")
+
+
+@runtime_app.command("reset")
+def runtime_reset(
+    repo: Optional[str] = typer.Option(None, "--repo", help="Framework root"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt"),
+) -> None:
+    """Tear down the runtime wiring (unit + marker), keeping tickets.
+
+    Disables and removes the systemd unit, stops any running daemon, and
+    deletes the root marker (``.tessera-root``). Your tickets and
+    ``registry.db`` under ``TicketsRepository/`` are intentionally PRESERVED —
+    this only undoes the daemon setup done by ``repo init`` / ``runtime
+    enable``. Re-run ``tessera repo init`` to set it up again.
+    """
+    from tessera_runtime.repo import DEFAULT_PREFIX, ROOT_MARKER
+    from tessera_runtime.systemd_units import disable_runtime
+
+    # The daemon is installed at the canonical prefix by `repo init` (no-arg);
+    # that is what `reset` tears down. A plain `tessera runtime reset` must not
+    # accidentally resolve to an unrelated local repo via cwd-walk, so default
+    # to DEFAULT_PREFIX unless --repo is given.
+    root = Path(repo).resolve() if repo else DEFAULT_PREFIX
+    if not yes:
+        typer.confirm(
+            f"Reset runtime at {root}? This disables the daemon + removes the "
+            "root marker. Tickets and registry.db are KEPT.",
+            abort=True,
+        )
+
+    # 1. Stop a live runtime so the socket is released.
+    from tessera_sdk import Runtime, RuntimeNotRunning
+
+    try:
+        client = Runtime.connect(repo=root)
+        client._rpc("shutdown")
+        client.close()
+        typer.echo("stopped running runtime")
+    except (RuntimeNotRunning, OSError):
+        typer.echo("no running runtime (nothing to stop)")
+
+    # 2. Disable + remove the systemd unit and its files.
+    typer.echo(disable_runtime())
+
+    # 3. Remove the root marker (discovery anchor). Tickets stay put.
+    marker = root / ROOT_MARKER
+    if marker.exists():
+        marker.unlink()
+        typer.echo(f"removed root marker {marker}")
+    else:
+        typer.echo("no root marker to remove")
+
+    typer.echo(f"reset complete. Tickets under {root / 'TicketsRepository'} are intact.")
 
 
 @runtime_app.command("status")
@@ -175,12 +180,63 @@ def runtime_status(
 def repo_init_cmd(
     path: Optional[str] = typer.Argument(None, help="Directory to scaffold"),
 ) -> None:
-    """Scaffold TicketRepository/ + .ticket-runtime/."""
-    from tessera_runtime.repo import repo_init
+    """Scaffold TicketsRepository/ + .ticket-runtime/ and start the runtime.
 
-    root = Path(path).resolve() if path else Path.cwd().resolve()
-    repo = repo_init(root)
-    typer.echo(f"Initialized Tessera repository at {repo}")
+    With no PATH, initializes the canonical prefix
+    (~/.local/share/tessera) and writes a root marker so all ``tessera``
+    commands discover it without a cwd walk. On completion the runtime
+    daemon is started (via systemd when available, else a detached process).
+    """
+    from tessera_runtime.repo import DEFAULT_PREFIX, repo_init, write_root_marker
+    from tessera_runtime.systemd_units import start_runtime
+
+    root = Path(path).resolve() if path else DEFAULT_PREFIX
+    typer.echo(f"→ initializing Tessera repository at {root}")
+    try:
+        repo_init(root)
+    except RuntimeError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"→ created directory tree {root / 'TicketsRepository' / '.ticket-runtime'}")
+
+    marker = write_root_marker(root)
+    typer.echo(f"→ wrote root marker {marker}")
+
+    typer.echo("→ starting runtime (services, sockets, watchers)…")
+    status = start_runtime(root)
+    typer.echo(f"→ {status}")
+    typer.echo(f"Initialized Tessera repository at {root}")
+
+
+@runtime_app.command("enable")
+def runtime_enable(
+    repo: Optional[str] = typer.Option(None, "--repo", help="Framework root"),
+) -> None:
+    """Write + enable the systemd user unit (no re-init; assumes repo exists)."""
+    from tessera_runtime.systemd_units import write_unit
+
+    root = _find_root(repo)
+    unit_path = write_unit(root)
+    reload_ = subprocess.run(
+        ["systemctl", "--user", "daemon-reload"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if reload_.returncode != 0:
+        typer.echo("warn: systemctl --user daemon-reload failed (no user session bus?)", err=True)
+    en = subprocess.run(
+        ["systemctl", "--user", "enable", "--now", "tessera-runtime.service"],
+        capture_output=True,
+        text=True,
+    )
+    if en.returncode == 0:
+        typer.echo(f"enabled + started {unit_path}")
+    else:
+        typer.echo(
+            f"warn: systemd enable failed ({en.stderr.strip() or en.returncode}); "
+            f"unit written to {unit_path} — start manually or use 'tessera runtime start'",
+            err=True,
+        )
 
 
 @repo_app.command("scan")
@@ -194,6 +250,91 @@ def repo_scan(
     result = rescan(root)
     count = len(result["registry"].list_all()) if result.get("registry") else 0
     typer.echo(f"Scanned {root}; {count} tickets in registry.")
+
+
+@repo_app.command("clean")
+def repo_clean() -> None:
+    """Remove stray runtime state left directly under $HOME (~/.ticket-runtime).
+
+    The runtime tree must live under a repository's
+    ``TicketsRepository/.ticket-runtime/`` (or the canonical prefix). A bare
+    ``~/.ticket-runtime/`` is leftover from pre-dev/v1 usage and is NOT where
+    the daemon stores its socket. This removes it after confirming it is the
+    stray home dir and not an active runtime.
+    """
+    from tessera_runtime.repo import stray_home_runtime_dir
+
+    stray = stray_home_runtime_dir()
+    if stray is None:
+        typer.echo("no stray ~/.ticket-runtime found; nothing to clean")
+        return
+    # Refuse if a runtime appears live there (defensive — normal location is
+    # inside a repo, so this should never be an active socket).
+    sock = stray / "runtime.sock"
+    if sock.exists():
+        typer.echo(f"error: {sock} looks active — stop the runtime first", err=True)
+        raise typer.Exit(1)
+    import shutil
+
+    shutil.rmtree(stray)
+    typer.echo(f"removed stray runtime dir {stray}")
+
+
+# --------------------------------------------------------------------------- #
+# completion
+# --------------------------------------------------------------------------- #
+completion_app = typer.Typer(help="Install shell completions.")
+app.add_typer(completion_app, name="completion")
+
+
+@completion_app.command("install")
+def completion_install(
+    shell: str = typer.Option("zsh", "--shell", help="Shell: zsh (bash planned)"),
+) -> None:
+    """Write the shell completion file under the prefix, not in $HOME.
+
+    typer's own ``--install-completion`` drops ``~/.zfunc/_tessera`` in your
+    home dir. To keep all Tessera state under the prefix, this writes the
+    completion script to ``~/.local/share/tessera/zfunc/_tessera`` instead and
+    prints the ``fpath`` line you add to your shell rc.
+    """
+    if shell != "zsh":
+        typer.echo(f"error: only zsh supported on dev/v1 (got {shell!r})", err=True)
+        raise typer.Exit(1)
+    from tessera_runtime.repo import DEFAULT_PREFIX
+
+    zfunc_dir = DEFAULT_PREFIX / "zfunc"
+    zfunc_dir.mkdir(parents=True, exist_ok=True)
+    dest = zfunc_dir / "_tessera"
+    # Render typer's canonical zsh completion script (the same text typer's
+    # own installer would write to ~/.zfunc/_tessera) but land it under the
+    # prefix instead of $HOME.
+    from typer.completion import get_completion_script
+
+    script = get_completion_script(
+        prog_name="tessera", complete_var="_TESSERA_COMPLETE", shell="zsh"
+    )
+    dest.write_text(script, encoding="utf-8")
+    dest.chmod(0o644)
+    typer.echo(f"wrote zsh completion to {dest}")
+    # zsh scans `fpath` (flat, non-recursive) for a `_tessera` file, so merely
+    # writing the file does nothing unless the dir is on fpath. Append the
+    # fpath line to the shell rc idempotently so completion actually works.
+    rc = Path.home() / ".zshrc"
+    fpath_line = f'fpath+={zfunc_dir}'
+    try:
+        existing = rc.read_text(encoding="utf-8") if rc.exists() else ""
+    except OSError:
+        existing = ""
+    marker = "# --- tessera completion (managed by `tessera completion install`) ---"
+    if fpath_line not in existing:
+        block = f"\n{marker}\n{fpath_line}\nautoload -Uz compinit; compinit\n"
+        with rc.open("a", encoding="utf-8") as fh:
+            fh.write(block)
+        typer.echo(f"appended completion setup to {rc}")
+        typer.echo("restart your shell (or `source ~/.zshrc`) to activate.")
+    else:
+        typer.echo(f"{rc} already configures fpath for tessera (no change).")
 
 
 # --------------------------------------------------------------------------- #

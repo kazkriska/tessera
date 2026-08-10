@@ -111,6 +111,6 @@ done
 banner "install complete"
 ok "tessera v${TESSERA_VERSION} installed at ${TESSERA_PREFIX}"
 ok "cli: ${TESSERA_BIN_DIR}/tessera, ${TESSERA_BIN_DIR}/ticket"
-ok "systemd user unit: ${TESSERA_SYSTEMD_USER_DIR}/tessera-runtime@.service"
-printf '%s\n' "    next: tessera repo init && tessera --help"
+ok "systemd user unit: generated on first 'tessera repo init' (not written now)"
+printf '%s\n' "    next: tessera repo init /path/to/repo && tessera --help"
 exit 0
