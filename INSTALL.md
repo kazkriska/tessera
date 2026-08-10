@@ -39,7 +39,7 @@ that ships *inside* the tarball.
    |--------|-----|
    | `00-precheck.sh` | Detect Python **≥ 3.12** (install `uv` via its checksum-verified installer and run `uv python install 3.12` if missing). Detect/require `uv`. **Linux-only** platform check (abort on non-Linux). |
    | `01-perms.sh` | User-scope permission stub. **No `sudo`** is ever invoked. |
-   | `02-scaffold.sh` | Create `~/.local/share/tessera`. Run `uv pip install .` from the extracted source (non-editable, offline-resolvable from the vendored `uv.lock`). Register the systemd user unit template. Symlink the CLI entry points. |
+   | `02-scaffold.sh` | Create `~/.local/share/tessera`. Run `uv pip install .` from the extracted source (non-editable, offline-resolvable from the vendored `uv.lock`). Symlink the CLI entry points. **No systemd unit is written** — `tessera repo init` generates it. |
    | `03-test.sh` | Run `e2e/smoke_test.py`. A **non-zero exit aborts the install** and triggers cleanup. |
    | `04-cleanup.sh` | Remove the tarball, bootstrap script, extraction dir, E2E artifacts, and temp repos. **Never removes the installed application.** |
 
@@ -54,7 +54,7 @@ install-time privilege-escalation risk.
 | Artifact | Path |
 | --- | --- |
 | Install prefix (app) | `~/.local/share/tessera/` |
-| Runtime systemd unit (template) | `~/.config/systemd/user/tessera-runtime@.service` |
+| Runtime systemd unit (non-template, written by `tessera repo init`) | `~/.config/systemd/user/tessera-runtime.service` |
 | CLI entry — `tessera` | `~/.local/bin/tessera` (symlink) |
 | CLI entry — `ticket` | `~/.local/bin/ticket` (symlink) |
 
@@ -170,6 +170,230 @@ rm -f  ~/.zfunc/_tessera                # only if you used typer's own installer
 systemctl --user daemon-reload
 # If a pre-dev/v1 stray runtime dir was left at home, remove it explicitly:
 #   tessera repo clean      # safe: refuses if a runtime looks live there
+```
+
+---
+
+## Manual Installation (build from source)
+
+Use this path when you are installing from **`dev/v1`** (or any development
+branch). `dev/v1` does **not** ship an official release, so the `curl … | bash`
+one-liner above does not apply to it — that bootstrap is pinned to the `v1.0.0`
+tag and release host published from `main`.
+
+Instead you build the release artifact **locally** and install from it, using
+the same installer the production path uses.
+
+> **You do not need to disable checksum verification.** `make dist` rebuilds the
+> tarball *and* injects that tarball's real SHA256 into your local
+> `dist/install.sh`. Verification then passes against **your own** artifact. This
+> is deliberately better than bypassing it: you keep the integrity check that
+> catches a truncated or corrupted local build (RFC-0013 §7).
+
+### Prerequisites
+
+- **Linux** — enforced by `00-precheck.sh` (Charter §7 Non-Goal; no macOS/Windows).
+- **`uv`** — install via `curl -LsSf https://astral.sh/uv/install.sh | sh` if missing.
+  (`00-precheck.sh` will install it for you if absent.)
+- **Python ≥ 3.12** — `00-precheck.sh` provisions one via `uv python install 3.12`
+  if your system has none.
+- **`git`**, **`curl`**, **`tar`**, and **`make`**.
+
+### Step 1 — Clone and check out the branch
+
+```bash
+git clone https://github.com/kazkriska/tessera.git
+cd tessera
+git checkout dev/v1
+```
+
+### Step 2 — Build the distribution
+
+```bash
+make dist
+```
+
+This runs `scripts/build_dist.py build`, which:
+
+1. Regenerates the derived copies under `dist/` (`src/`, `pyproject.toml`,
+   `uv.lock`, `LICENSE`, `e2e/smoke_test.py`) from the repo-root sources of truth.
+2. Assembles `dist/tessera-<version>.tar.gz` from `dist/SOURCE_MANIFEST.txt`
+   plus the installer.
+3. Writes `dist/tessera-<version>.tar.gz.sha256`.
+4. **Injects the real SHA256 into `dist/install.sh`**, replacing the previous digest.
+
+Confirm the staging directory is self-consistent before installing:
+
+```bash
+make check-dist
+# [build_dist] check: dist/ is consistent (sha 3476e106ea91…)
+```
+
+The digest differs on every rebuild — gzip embeds timestamps, so the tarball is
+not byte-reproducible across runs. Only its **self-consistency** with
+`dist/install.sh` matters here.
+
+If this reports `dist/ is STALE`, re-run `make dist` — see
+[Adding new modules](#adding-new-modules-manifest-gotcha) if it persists.
+
+### Step 3 — Install
+
+Two supported routes. **Route A** is recommended: it is the exact production
+code path, just pointed at a local artifact.
+
+#### Route A — full installer against your local tarball (recommended)
+
+`TESSERA_TARBALL` makes the bootstrap use a local file instead of downloading
+from the release host. The checksum is **still verified**, against the digest
+`make dist` just injected.
+
+```bash
+TESSERA_TARBALL="$PWD/dist/tessera-1.0.0.tar.gz" bash dist/install.sh
+```
+
+You get the complete pipeline — fetch → verify → extract → modules `00`–`04`:
+
+```
+==> [tessera] phase 2/4 · verify sha256
+    ok: sha256 verified: 3476e106ea91…
+==> [tessera] phase 4/4 · running install modules
+    ok: packages installed (tessera_runtime, tessera_sdk)
+==> [tessera] install complete
+```
+
+#### Route B — run the install modules directly (fastest iteration)
+
+`install-modules/main.sh` runs against an unpacked source tree, skipping the
+fetch, extract and checksum phases entirely. It resolves `TESSERA_SRC_DIR` to
+its own parent directory, so run it from `dist/`:
+
+```bash
+bash dist/install-modules/main.sh
+```
+
+Use this when you are rebuilding repeatedly and do not need to exercise the
+tarball path. Note it installs from `dist/`, so **run `make dist` first** to pick
+up your latest `src/` changes.
+
+### Sandboxing the install
+
+To avoid clobbering an existing installation, redirect the prefix and bin dir:
+
+```bash
+export TESSERA_PREFIX="$HOME/.local/share/tessera-dev"
+export TESSERA_BIN_DIR="$HOME/.local/bin-dev"
+TESSERA_TARBALL="$PWD/dist/tessera-1.0.0.tar.gz" bash dist/install.sh
+```
+
+> **These variables only affect the installer shell, not the runtime.** The
+> `tessera` CLI hardcodes `DEFAULT_PREFIX = ~/.local/share/tessera`
+> (`repo.py`) and `SYSTEMD_USER_DIR = ~/.config/systemd/user`
+> (`systemd_units.py`). A no-argument `tessera repo init` will therefore still
+> write to your **real** home, regardless of `TESSERA_PREFIX`. Always pass an
+> explicit path — `tessera repo init /path/to/scratch` — when testing.
+
+### Environment variables
+
+| Variable | Effect |
+| --- | --- |
+| `TESSERA_TARBALL` | Install from this local tarball instead of downloading. Still SHA256-verified. |
+| `TESSERA_PREFIX` | Install prefix (default `~/.local/share/tessera`). Installer only. |
+| `TESSERA_BIN_DIR` | Symlink target dir (default `~/.local/bin`). Installer only. |
+| `TESSERA_SYSTEMD_USER_DIR` | Unit dir used by the installer (default `~/.config/systemd/user`). |
+| `TESSERA_SKIP_E2E=1` | Skip the post-install smoke test in `03-test.sh`. Use it to speed up iterative rebuilds. A full install (smoke test run) is safe and recommended before trusting a build — the smoke test is idempotent and tolerates a runtime that `repo init` already started. |
+| `TESSERA_SRC_DIR` | Source tree for `main.sh` when invoked directly (auto-resolved). |
+
+> **Run the smoke test at least once before trusting a build.** The smoke test's
+> first step is `tessera repo init`, which is exactly what catches a payload with
+> missing modules. On `dev/v1` `repo init` auto-starts the daemon, so the smoke
+> test detects an already-running runtime and leaves it alone rather than failing
+> — you get a real end-to-end verification without the install aborting.
+
+### Verify the install
+
+```bash
+tessera --help                 # runtime CLI responds
+ticket  --help                 # SDK client CLI responds
+tessera repo init /tmp/scratch-repo   # the real integration check
+```
+
+`tessera --help` succeeding is **not** sufficient — a payload missing runtime
+modules still passes it, because the imports are lazy and inside the command
+bodies. `tessera repo init` imports `tessera_runtime.systemd_units` and is the
+first command to fail on an incomplete build. Confirm the packaged modules
+directly if you want certainty:
+
+```bash
+"$TESSERA_PREFIX/venv/bin/python" -c \
+  "import tessera_runtime.daemon, tessera_runtime.systemd_units, tessera_sdk; print('ok')"
+```
+
+> **Known limitation — post-install e2e smoke test (step 5/6).** The full
+> install runs `e2e/smoke_test.py`, which currently fails its
+> `on_state_updated` hook check when exercised immediately after a fresh
+> `repo init`. This is a **runtime-engine** bug, not an install-path defect:
+> the daemon's file watcher registers inotify watches at boot, but `repo init`
+> auto-starts the daemon *before* any ticket exists, so a ticket created
+> afterwards is never watched (inotify is non-recursive and the watcher does
+> not re-scan for new ticket directories). The `action` over the runtime socket
+> still passes — only the filesystem-driven hook is affected. This does **not**
+> indicate a broken build: the import check above is the authoritative
+> payload-integrity gate. Tracked separately from this install guide; the
+> watcher re-scan (`FsWatcher._watch_root`) must be wired into the Pipeline's
+> onCreate path.
+
+### Adding new modules (manifest gotcha)
+
+`dist/SOURCE_MANIFEST.txt` is a **hand-maintained** file list, and it — not the
+contents of `src/` — determines what goes into the tarball. `make dist` copies
+new modules into `dist/src/`, but a file absent from the manifest is **silently
+omitted from the tarball**.
+
+The result is a build that installs successfully and then fails at runtime with
+`ModuleNotFoundError`. `make check-dist` does **not** catch this: it verifies
+`dist/` is in sync with `src/`, not that the manifest is complete.
+
+**When you add a module under `src/`, add it to the manifest in the same commit:**
+
+```bash
+# from the repo root, after `make dist` has synced dist/src/
+cd dist
+sha256sum src/tessera_runtime/your_new_module.py   # append: "<sha>  <relpath>"
+```
+
+Keep entries sorted by path and update the `# files: N` counter. Then rebuild
+and confirm the module actually ships:
+
+```bash
+make dist
+tar -tzf dist/tessera-1.0.0.tar.gz | grep your_new_module.py
+```
+
+### Pitfalls
+
+- **Do not commit a locally regenerated `dist/`.** `make dist` rewrites the
+  tarball, its `.sha256`, and the `EXPECTED_SHA256` line in `dist/install.sh`.
+  Those artifacts belong to the release process on `main`. Check with
+  `git status` and revert with `git checkout -- dist/` before committing.
+- **The installer writes to your real home even when sandboxed.** `02-scaffold.sh`
+  runs `tessera completion install`, which creates
+  `~/.local/share/tessera/zfunc/_tessera` and appends an `fpath+=` block to
+  `~/.zshrc` — both at the hardcoded default prefix.
+- **Editable installs are forbidden.** RFC-0013 §3 requires a closed, non-editable
+  artifact; do not substitute `uv pip install -e .`.
+- **Never use `sudo`.** `01-perms.sh` refuses to run as root.
+- **Reinstalls are idempotent.** `uv venv --clear` recreates the venv, so
+  re-running either route safely overwrites the previous install.
+
+### Uninstall
+
+```bash
+systemctl --user disable --now tessera-runtime.service 2>/dev/null
+rm -rf "${TESSERA_PREFIX:-$HOME/.local/share/tessera}"
+rm -f  "${TESSERA_BIN_DIR:-$HOME/.local/bin}"/tessera "${TESSERA_BIN_DIR:-$HOME/.local/bin}"/ticket
+rm -f  ~/.config/systemd/user/tessera-runtime.service
+systemctl --user daemon-reload
+# remove the completion block appended to ~/.zshrc, if present
 ```
 
 ---
