@@ -132,7 +132,12 @@ def smoke(root: Path, cli: list[str]) -> None:
     repo_dir = root / "TicketsRepository"
     ticket_dir = repo_dir / f"{TICKET_ID}.ticket"
     marker_path = ticket_dir / HOOK_MARKER
-    runtime_started = False
+    # Whether *this* test brought the daemon up (so only we stop it). If the
+    # daemon was already live — e.g. `repo init` auto-starts it on dev/v1 — we
+    # must NOT stop it on teardown, or we would tear down a runtime the
+    # environment is relying on.
+    runtime_was_live = False
+    runtime_started_here = False
 
     try:
         # ---------------------------------------------------------------- #
@@ -167,12 +172,24 @@ def smoke(root: Path, cli: list[str]) -> None:
         # ---------------------------------------------------------------- #
         # The ticket must exist before boot: inotify watches are registered
         # per-directory at watcher start-up.
-        step("4/6 start runtime")
-        proc = run(cli + ["runtime", "start", "--repo", str(root)], RUNTIME_START_TIMEOUT)
-        runtime_started = proc.returncode == 0
-        check(runtime_started, "tessera runtime start exits 0", _tail(proc.stdout + proc.stderr))
-        if not runtime_started:
-            return  # nothing downstream can succeed
+        step("4/6 ensure runtime is up")
+        # `repo init` already starts the daemon on dev/v1, so tolerate an
+        # already-running runtime instead of failing the smoke test.
+        status = run(cli + ["runtime", "status", "--repo", str(root)])
+        runtime_was_live = "running: yes" in status.stdout
+        if runtime_was_live:
+            runtime_started_here = False
+            print("runtime already running (left as-is)")
+        else:
+            proc = run(cli + ["runtime", "start", "--repo", str(root)], RUNTIME_START_TIMEOUT)
+            runtime_started_here = proc.returncode == 0
+            check(
+                runtime_started_here,
+                "tessera runtime start exits 0",
+                _tail(proc.stdout + proc.stderr),
+            )
+            if not runtime_started_here:
+                return  # nothing downstream can succeed
 
         # ---------------------------------------------------------------- #
         step("5/6 hook fires on state.updated")
@@ -226,11 +243,13 @@ def smoke(root: Path, cli: list[str]) -> None:
         )
 
     finally:
-        if runtime_started:
-            step("teardown: stop runtime")
+        if runtime_started_here:
+            step("teardown: stop runtime (started by this test)")
             stop = run(cli + ["runtime", "stop", "--repo", str(root)], 30)
             print(f"runtime stop: exit={stop.returncode} {_tail(stop.stdout + stop.stderr, 120)}")
             time.sleep(0.5)
+        elif runtime_was_live:
+            print("teardown: runtime was already live before this test — left running")
 
 
 def main() -> int:
