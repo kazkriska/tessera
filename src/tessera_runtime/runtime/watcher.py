@@ -55,6 +55,29 @@ def _walk_dirs(root: Path) -> list[Path]:
     return [p for p in root.rglob("*") if p.is_dir()] + [root]
 
 
+# Change types that mean "a new directory just appeared here"; only these
+# trigger a watch re-scan (see FsWatcher._is_new_directory_event).
+_NEW_DIR_CHANGES = ("create", "moved_to")
+
+
+def _change_type_for_mask(mask: int) -> str:
+    """Translate a raw inotify mask into a coarse change-type name.
+
+    Only the distinctions the watcher acts on are modelled: directory
+    appearance (``create`` / ``moved_to``) drives the watch re-scan; every
+    other event is content churn and keeps the historical ``modify`` label.
+    """
+    if mask & _IN.CREATE:
+        return "create"
+    if mask & _IN.MOVED_TO:
+        return "moved_to"
+    if mask & _IN.MOVED_FROM:
+        return "moved_from"
+    if mask & _IN.DELETE:
+        return "delete"
+    return "modify"
+
+
 @dataclass
 class FsWatcher:
     """Thin inotify wrapper with path-to-trigger mapping and debounce.
@@ -159,6 +182,29 @@ class FsWatcher:
     # ------------------------------------------------------------------ #
     # Debounce
     # ------------------------------------------------------------------ #
+    def _is_new_directory_event(self, changed_path: Path, change_type: str) -> bool:
+        """True when *changed_path* is a directory that just appeared.
+
+        The signal we care about is a ``*.ticket`` directory created (or moved
+        in) under ``TicketsRepository`` after the watcher booted — inotify is
+        non-recursive, so such a directory carries no watch and every file
+        written inside it would be invisible. Directories created *inside* an
+        already-known ticket (``task/assets/…``) have the same problem, so they
+        qualify too. Everything else — every file event — is excluded, keeping
+        the re-scan off the hot path.
+        """
+        if change_type not in _NEW_DIR_CHANGES:
+            return False
+        if not (
+            changed_path.name.endswith(".ticket")
+            or self._owning_ticket_id(changed_path) is not None
+        ):
+            return False
+        try:
+            return changed_path.is_dir()
+        except OSError:  # pragma: no cover — path vanished between event and stat
+            return False
+
     def _on_fs_event(
         self,
         changed_path_str: str,
@@ -167,6 +213,15 @@ class FsWatcher:
     ) -> None:
         """Coalesce rapid duplicate events for the same (ticket_id, trigger)."""
         changed_path = Path(changed_path_str)
+
+        # Self-heal the watch set: a ticket directory created after boot is
+        # unwatched (inotify does not recurse), which would silently kill every
+        # filesystem trigger for that ticket. Re-scan now — the CREATE event is
+        # emitted after mkdir, so the directory exists and _walk_dirs sees it.
+        # _watch_root() is idempotent (it skips directories already watched).
+        if self._is_new_directory_event(changed_path, change_type):
+            self._watch_root()
+
         trigger = self._trigger_for_path(changed_path)
         ticket_id = self._owning_ticket_id(changed_path)
         if ticket_id is None:
@@ -249,7 +304,11 @@ class FsWatcher:
         known = set(self._wd_to_path.values())
         for dir_path in _walk_dirs(tickets_root):
             if str(dir_path) not in known:
-                wd = self._inotify.add_watch(str(dir_path), _WATCH_FLAGS)
+                try:
+                    wd = self._inotify.add_watch(str(dir_path), _WATCH_FLAGS)
+                except OSError:  # directory vanished between walk and add_watch
+                    logger.debug("watcher: could not watch %s (vanished)", dir_path)
+                    continue
                 self._wd_to_path[wd] = str(dir_path)
 
     def start(self, block: bool = False) -> None:
@@ -282,7 +341,9 @@ class FsWatcher:
                             # Map the watch descriptor back to its directory.
                             base = self._wd_to_path.get(event.wd, "")
                             full = str(Path(base) / (event.name or "")) if event.name else base
-                            self._on_fs_event(full, "modify", bus.publish)
+                            self._on_fs_event(
+                                full, _change_type_for_mask(event.mask), bus.publish
+                            )
                         except Exception:  # noqa: BLE001 — one bad event must not kill the loop
                             logger.exception("watcher: failed to dispatch event %r", event)
             finally:
