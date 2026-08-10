@@ -1,12 +1,14 @@
 # Tessera v1 — build & verify targets
 #
-# Single source of truth for the release artifact lives in the repo root:
-#   src/  pyproject.toml  uv.lock  LICENSE  e2e/  dist/install.sh  dist/install-modules/
-# plus the hand-authored dist/README.md and dist/SOURCE_MANIFEST.txt.
+# The release tarball payload is derived from the repo root:
+#   src/  pyproject.toml  uv.lock  LICENSE  README.md  e2e/  install-modules/
+# (see _PAYLOAD_INCLUDE in scripts/build_dist.py, filtered by .distignore).
 #
-# `make dist` regenerates the derived copies under dist/ and the
-# tarball + SHA256, and injects the real digest into dist/install.sh.
-# `make check-dist` verifies dist/ is NOT stale (used by CI).
+# `make dist` stages the payload under dist/ (a GENERATED, git-ignored build
+# output — never committed), builds the tarball + SHA256, and injects the real
+# digest into dist/install.sh.
+# `make check-dist` verifies the dist/ build is consistent and complete (CI gate,
+# including the src/-module completeness gate).
 
 UV ?= uv
 PYTHON ?= python3
@@ -16,10 +18,10 @@ VERSION := $(shell $(PYTHON) -c "import re,pathlib;print(re.search(r'version\s*=
 
 help:
 	@echo "Targets:"
-	@echo "  test         run the pytest suite (164 tests)"
+	@echo "  test         run the pytest suite (168 tests)"
 	@echo "  dist         regenerate dist/ from sources + build tarball + inject SHA"
-	@echo "  check-dist   verify dist/ is consistent with sources (CI gate)"
-	@echo "  clean        remove build artifacts under dist/"
+	@echo "  check-dist   verify dist/ is consistent and complete (CI gate)"
+	@echo "  clean        remove the generated dist/ build output"
 
 test:
 	$(UV) run --extra dev pytest -q
@@ -31,5 +33,4 @@ check-dist:
 	$(PYTHON) scripts/build_dist.py check
 
 clean:
-	rm -rf dist/src dist/tessera-*.tar.gz dist/tessera-*.tar.gz.sha256
-	rm -f dist/pyproject.toml dist/uv.lock dist/LICENSE dist/e2e/smoke_test.py
+	rm -rf dist/

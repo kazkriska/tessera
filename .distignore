@@ -18,10 +18,10 @@ SOURCE_MANIFEST.txt
 # --- Never ship the staging dir or its outputs as payload ---
 dist/
 
-# --- Test suite (only the curated e2e/ subset ships) ---
+# --- Test suite (only the curated e2e/ subset ships; unit tests do not) ---
 tests/
-test_*.py
-*_test.py
+tests/test_*.py
+tests/*_test.py
 
 # --- Vendored docs repo + framework meta (never shipped) ---
 formal-specifications/

@@ -342,39 +342,42 @@ directly if you want certainty:
 > watcher re-scan (`FsWatcher._watch_root`) must be wired into the Pipeline's
 > onCreate path.
 
-### Adding new modules (manifest gotcha)
+### Adding new modules
 
-`dist/SOURCE_MANIFEST.txt` is a **hand-maintained** file list, and it — not the
-contents of `src/` — determines what goes into the tarball. `make dist` copies
-new modules into `dist/src/`, but a file absent from the manifest is **silently
-omitted from the tarball**.
+The tarball payload is **derived automatically** from the source tree — you no
+longer maintain a manifest by hand. `scripts/build_dist.py` walks the inclusion
+set (`_PAYLOAD_INCLUDE`: `src/`, `pyproject.toml`, `uv.lock`, `LICENSE`,
+`README.md`, `install-modules/`, `e2e/`) and drops anything matched by
+`.distignore`. A new module under `src/` is therefore picked up on the very next
+`make dist` with **no manifest edit**.
 
-The result is a build that installs successfully and then fails at runtime with
-`ModuleNotFoundError`. `make check-dist` does **not** catch this: it verifies
-`dist/` is in sync with `src/`, not that the manifest is complete.
+To make that guarantee enforceable, `make check-dist` runs a **completeness
+gate**: every file under `src/` not excluded by `.distignore` must be present in
+the tarball, or the build hard-fails. This is the regression guard that catches
+an omitted module at CI time rather than as a runtime `ModuleNotFoundError`.
 
-**When you add a module under `src/`, add it to the manifest in the same commit:**
-
-```bash
-# from the repo root, after `make dist` has synced dist/src/
-cd dist
-sha256sum src/tessera_runtime/your_new_module.py   # append: "<sha>  <relpath>"
-```
-
-Keep entries sorted by path and update the `# files: N` counter. Then rebuild
-and confirm the module actually ships:
+**Workflow when you add a module under `src/`:**
 
 ```bash
 make dist
-tar -tzf dist/tessera-1.0.0.tar.gz | grep your_new_module.py
+tar -tzf dist/tessera-1.0.0.tar.gz | grep your_new_module.py   # confirm it shipped
+make check-dist                                                   # gate passes
 ```
+
+If a source file genuinely must not ship, add a pattern to `.distignore`
+(the gate respects it); otherwise the gate will refuse the build.
+
+> `dist/SOURCE_MANIFEST.txt` still exists but is now **generated** by `make dist`
+> (it lists the exact files shipped, so `sha256sum -c` can verify them). Do not
+> edit it by hand — it is output only.
 
 ### Pitfalls
 
-- **Do not commit a locally regenerated `dist/`.** `make dist` rewrites the
-  tarball, its `.sha256`, and the `EXPECTED_SHA256` line in `dist/install.sh`.
-  Those artifacts belong to the release process on `main`. Check with
-  `git status` and revert with `git checkout -- dist/` before committing.
+- **`dist/` is a generated, git-ignored build output — never commit it.**
+  `make dist` rewrites the tarball, its `.sha256`, and the `EXPECTED_SHA256`
+  line in `dist/install.sh`. Those artifacts are produced locally for dev/test
+  installs; the release process on `main` rebuilds and publishes them. `.gitignore`
+  already excludes `dist/`, so `git status` will not show it — that is expected.
 - **The installer writes to your real home even when sandboxed.** `02-scaffold.sh`
   runs `tessera completion install`, which creates
   `~/.local/share/tessera/zfunc/_tessera` and appends an `fpath+=` block to
