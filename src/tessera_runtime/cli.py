@@ -93,6 +93,59 @@ def runtime_stop(
     typer.echo("Runtime stopped.")
 
 
+@runtime_app.command("reset")
+def runtime_reset(
+    repo: Optional[str] = typer.Option(None, "--repo", help="Framework root"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt"),
+) -> None:
+    """Tear down the runtime wiring (unit + marker), keeping tickets.
+
+    Disables and removes the systemd unit, stops any running daemon, and
+    deletes the root marker (``.tessera-root``). Your tickets and
+    ``registry.db`` under ``TicketsRepository/`` are intentionally PRESERVED —
+    this only undoes the daemon setup done by ``repo init`` / ``runtime
+    enable``. Re-run ``tessera repo init`` to set it up again.
+    """
+    from tessera_runtime.repo import DEFAULT_PREFIX, ROOT_MARKER
+    from tessera_runtime.systemd_units import disable_runtime
+
+    # The daemon is installed at the canonical prefix by `repo init` (no-arg);
+    # that is what `reset` tears down. A plain `tessera runtime reset` must not
+    # accidentally resolve to an unrelated local repo via cwd-walk, so default
+    # to DEFAULT_PREFIX unless --repo is given.
+    root = Path(repo).resolve() if repo else DEFAULT_PREFIX
+    if not yes:
+        typer.confirm(
+            f"Reset runtime at {root}? This disables the daemon + removes the "
+            "root marker. Tickets and registry.db are KEPT.",
+            abort=True,
+        )
+
+    # 1. Stop a live runtime so the socket is released.
+    from tessera_sdk import Runtime, RuntimeNotRunning
+
+    try:
+        client = Runtime.connect(repo=root)
+        client._rpc("shutdown")
+        client.close()
+        typer.echo("stopped running runtime")
+    except (RuntimeNotRunning, OSError):
+        typer.echo("no running runtime (nothing to stop)")
+
+    # 2. Disable + remove the systemd unit and its files.
+    typer.echo(disable_runtime())
+
+    # 3. Remove the root marker (discovery anchor). Tickets stay put.
+    marker = root / ROOT_MARKER
+    if marker.exists():
+        marker.unlink()
+        typer.echo(f"removed root marker {marker}")
+    else:
+        typer.echo("no root marker to remove")
+
+    typer.echo(f"reset complete. Tickets under {root / 'TicketsRepository'} are intact.")
+
+
 @runtime_app.command("status")
 def runtime_status(
     repo: Optional[str] = typer.Option(None, "--repo", help="Framework root"),

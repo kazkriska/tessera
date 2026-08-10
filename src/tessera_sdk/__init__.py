@@ -142,11 +142,10 @@ class Runtime:
             # The socket lives under $XDG_RUNTIME_DIR/tessera/<hash>/, so its
             # path no longer reveals the repo root. Ask the running server for
             # its root via the `status` RPC instead of guessing from the path.
+            # (A bare socket probe - Runtime.__init__ requires a repo, which is
+            # exactly what we're trying to discover here.)
             try:
-                probe = cls(sock=sock_path)
-                status = probe._rpc("status")
-                root = Path(status["root"])
-                probe.close()
+                root = Path(_probe_root(sock_path))
             except Exception:  # noqa: BLE001
                 root = find_repo_root(None)
         else:
@@ -332,6 +331,32 @@ class Runtime:
                 import time
 
                 time.sleep(0.01)
+
+
+def _probe_root(sock_path: Path) -> str:
+    """Ask a live runtime for its repo root via a bare ``status`` RPC.
+
+    The socket path no longer encodes the repo root (it lives under
+    ``$XDG_RUNTIME_DIR``), so we read it from the server. Minimal JSON-RPC
+    over AF_UNIX - does not construct a ``Runtime`` (which needs a repo).
+    """
+    import json
+    import socket as _socket
+
+    s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    s.settimeout(5.0)
+    s.connect(str(sock_path))
+    req = json.dumps({"method": "status", "params": {}}).encode("utf-8")
+    s.sendall(req + b"\n")
+    buf = b""
+    while b"\n" not in buf:
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        buf += chunk
+    s.close()
+    resp = json.loads(buf.split(b"\n", 1)[0])
+    return resp["result"]["root"]
 
 
 def find_repo_root(start: str | Path | None = None) -> Path:

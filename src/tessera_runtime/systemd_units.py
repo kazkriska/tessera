@@ -135,3 +135,54 @@ def start_runtime(repo_root: str | Path) -> str:
     # Direct detached daemon.
     pid = launch_runtime_daemon(root)
     return f"started runtime directly (detached pid {pid}); systemd user session not available"
+
+
+def disable_runtime() -> str:
+    """Stop + disable the systemd unit and remove its files.
+
+    Idempotent: works whether the unit is active, inactive, or absent. Stops
+    the running daemon first (so the socket is released), then
+    ``disable --now``, removes the unit file + ``default.target.wants``
+    symlink, and reloads the user manager. Returns a human-readable summary.
+    Does NOT touch ticket data or the registry — only the daemon wiring.
+    """
+    lines: list[str] = []
+    if _systemd_available():
+        # Stop gracefully (ignore failure if not running).
+        subprocess.run(
+            ["systemctl", "--user", "stop", UNIT_NAME],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        subprocess.run(
+            ["systemctl", "--user", "disable", UNIT_NAME],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        subprocess.run(
+            ["systemctl", "--user", "daemon-reload"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        lines.append(f"disabled systemd unit {UNIT_NAME}")
+    else:
+        lines.append("no systemd user session; skipped unit disable")
+
+    unit_path = SYSTEMD_USER_DIR / UNIT_NAME
+    wants_link = SYSTEMD_USER_DIR / "default.target.wants" / UNIT_NAME
+    removed = []
+    for p in (unit_path, wants_link):
+        try:
+            p.unlink(missing_ok=True)
+            removed.append(str(p))
+        except OSError:
+            pass
+    if removed:
+        lines.append(f"removed unit files: {', '.join(removed)}")
+    else:
+        lines.append("no unit files to remove")
+    return "; ".join(lines)
+
